@@ -1,0 +1,105 @@
+{
+  "$comment": "Schema đầu ra bắt buộc của bước GENERATE (xAI structured outputs, strict). Chỉ dùng tính năng schema được xAI hỗ trợ: oneOf (xử lý như anyOf), const, enum, maxLength<=2048, maxItems<=256. Xem docs/04-integration-contracts.md mục 2.4.",
+  "name": "b2b_content_package",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["market", "topic_summary", "post", "sources", "claims_to_verify", "media"],
+    "properties": {
+      "market": { "type": "string", "enum": ["VN", "JP"] },
+      "topic_summary": { "type": "string", "maxLength": 400 },
+      "post": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["headline", "body", "call_to_action", "hashtags"],
+        "properties": {
+          "headline": { "type": "string", "maxLength": 120 },
+          "body": { "type": "string", "maxLength": 2000 },
+          "call_to_action": { "type": "string", "maxLength": 200 },
+          "hashtags": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 60 } }
+        }
+      },
+      "sources": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 10,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "url"],
+          "properties": {
+            "title": { "type": "string", "maxLength": 200 },
+            "url": { "type": "string", "format": "uri" }
+          }
+        }
+      },
+      "claims_to_verify": {
+        "type": "array",
+        "maxItems": 10,
+        "items": { "type": "string", "maxLength": 300 }
+      },
+      "media": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine"],
+            "properties": { "engine": { "const": "NONE" } }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine", "card"],
+            "properties": {
+              "engine": { "const": "REMOTION_CARD" },
+              "card": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["title", "bullets"],
+                "properties": {
+                  "title": { "type": "string", "maxLength": 100 },
+                  "bullets": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "type": "string", "maxLength": 120 } }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine", "scenes", "voiceover_script"],
+            "properties": {
+              "engine": { "const": "REMOTION_VIDEO" },
+              "voiceover_script": { "type": "string", "maxLength": 1000 },
+              "scenes": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["title", "bullets", "voiceover_segment"],
+                  "properties": {
+                    "title": { "type": "string", "maxLength": 100 },
+                    "bullets": { "type": "array", "maxItems": 4, "items": { "type": "string", "maxLength": 120 } },
+                    "voiceover_segment": { "type": "string", "maxLength": 300 }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine", "visual_prompt_en", "voiceover_script"],
+            "properties": {
+              "engine": { "const": "GROK_IMAGINE_REEL" },
+              "visual_prompt_en": { "type": "string", "maxLength": 1000 },
+              "voiceover_script": { "type": "string", "maxLength": 400 }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

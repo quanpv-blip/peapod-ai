@@ -1,0 +1,33 @@
+stages: [check, security]
+
+default:
+  image: node:22-bookworm-slim
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [node_modules/]
+
+typecheck-test:
+  stage: check
+  script:
+    - npm ci
+    - npm run typecheck
+    - npm test
+    - npm run build
+
+# NFR-SEC-01: quét bí mật trong mã nguồn.
+secrets-scan:
+  stage: security
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  cache: {}
+  script:
+    - gitleaks detect --source . --no-banner --redact --verbose
+
+npm-audit:
+  stage: security
+  script:
+    - npm ci
+    - npm audit --omit=dev --audit-level=high
+  allow_failure: true

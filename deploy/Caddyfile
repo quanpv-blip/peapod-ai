@@ -1,0 +1,17 @@
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Cổng quản trị chỉ nên mở cho dải IP công ty/VPN nếu khả thi (NFR-SEC-05). Bỏ chú thích và điền dải IP:
+	# @blocked not remote_ip 203.0.113.0/24
+	# respond @blocked 403
+
+	reverse_proxy api:3000
+}
