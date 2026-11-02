@@ -34,6 +34,16 @@ describe('phụ đề từ timestamp TTS', () => {
     expect(cues.map((c) => c.text.replace(/\s/g, '')).join('')).toBe(long.replace(/\s/g, ''));
     for (let i = 1; i < cues.length; i++) expect(cues[i]!.start).toBeGreaterThanOrEqual(cues[i - 1]!.end - 1e-9);
   });
+  it('tiếng Nhật: không cắt giữa ございます/お持ち và không có dòng rỗng (lỗi thật từ PoC e2e)', () => {
+    const jp = '組込みやデータ再利用に課題をお持ちではないでしょうか。一般的な生成AIは回答文を自動生成するため出力形式が変わる可能性がございますが、自然言語の入力に適しています。';
+    const { chars, times } = mk(jp);
+    const cues = buildCues(chars, times, { maxCharsPerLine: 18, locale: 'ja' });
+    for (const c of cues) {
+      for (const line of c.text.split('\n')) expect(line.length).toBeGreaterThan(0);
+      expect(c.text).not.toMatch(/ござ$|ご$|お$|ざ$/);
+    }
+    expect(cues.map((c) => c.text.replace(/\s/g, '')).join('')).toBe(jp);
+  });
   it('ném lỗi khi độ dài không khớp', () => {
     expect(() => buildCues(['a'], [], { maxCharsPerLine: 10 })).toThrow();
   });
