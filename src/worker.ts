@@ -9,7 +9,9 @@ import { modelChainFromEnv, withFallback } from './providers/aiChain.ts';
 import { markAiExhausted } from './services/quota.ts';
 import { createMetaClient } from './providers/meta.ts';
 import { pagesFromEnv } from './services/publish.ts';
-import { fetchFeeds } from './services/generate.ts';
+import { fetchFeeds, generateTopic } from './services/generate.ts';
+import { handleUpdate, parseAllowlist, type BotDeps } from './services/telegramBot.ts';
+import { pollTelegram } from './jobs/telegramPoll.ts';
 
 // Worker: hàng đợi pg-boss (ADR-03) giữ lại cho các job sau này; chu kỳ nền chạy theo nhịp, có khóa tư vấn để một lúc chỉ một tiến trình chạy.
 const cfg = loadBaseConfig();
@@ -75,7 +77,29 @@ const timer = setInterval(() => void tick(), everyMs);
 void tick();
 console.log(JSON.stringify({ level: 'info', msg: 'worker started', everyMinutes: everyMs / 60_000, publisher: !!deps.publisher, generator: !!deps.generator }));
 
+// Bot Telegram: menu và lệnh cho người được cấp quyền (long polling, không cần HTTPS công khai).
+let stopping = false;
+const tgToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+if (tgToken) {
+  const gen = deps.generator;
+  const bot: BotDeps = {
+    db: pool,
+    token: tgToken,
+    allowed: parseAllowlist(process.env.TELEGRAM_ALLOWED_USER_IDS),
+    appUrl: process.env.APP_BASE_URL ?? '',
+    createTopic: gen
+      ? async (market, topic) => {
+          const r = await generateTopic({ db: pool, ...gen }, { market, topic, model: gen.model });
+          if (r.outcome === 'created') return `✅ Đã tạo bài #${r.id} (${market}), đang chờ duyệt.${process.env.APP_BASE_URL ? `\n${process.env.APP_BASE_URL}/contents/${r.id}` : ''}`;
+          return `⚠️ ${r.detail}`;
+        }
+      : null,
+  };
+  void pollTelegram({ db: pool, token: tgToken, handle: (u) => handleUpdate(bot, u), isStopped: () => stopping });
+}
+
 const stop = async () => {
+  stopping = true;
   clearInterval(timer);
   await boss.stop({ graceful: true });
   await pool.end();

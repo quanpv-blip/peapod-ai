@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { notifyTelegram, telegramFromEnv } from '../src/providers/telegram.ts';
 
-const okFetch = (status = 200) => vi.fn(async () => new Response('{}', { status }));
+// Telegram trả JSON có trường ok; HTTP 429 kèm mô tả lỗi.
+const okFetch = (status = 200) => vi.fn(async () =>
+  new Response(status === 200 ? '{"ok":true,"result":{}}' : '{"ok":false,"description":"Too Many Requests"}', { status }));
 
 describe('kênh Telegram', () => {
   afterEach(() => vi.restoreAllMocks());
