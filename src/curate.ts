@@ -6,7 +6,7 @@ import { requireEnv } from './config.ts';
 import { createPool } from './db.ts';
 import type { Market } from './domain/package.ts';
 import { createGeminiClient } from './providers/gemini.ts';
-import { fetchFeeds, generateNews } from './services/generate.ts';
+import { generateNews } from './services/generate.ts';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
 
@@ -24,7 +24,7 @@ const pool = createPool(requireEnv('DATABASE_URL'));
 try {
   const schema = JSON.parse(readFileSync('schemas/content_package.schema.json', 'utf8')).schema as object;
   console.log(`${market}: mục tiêu ${limit} bài, mô hình ${model}${dryRun ? ' (dry-run)' : ''}`);
-  const results = await generateNews({ db: pool, gemini: createGeminiClient(), schema, fetchItems: fetchFeeds }, { market, limit, model, dryRun });
+  const results = await generateNews({ db: pool, gemini: createGeminiClient(), schema, mediaDir: process.env.MEDIA_DIR ?? './media' }, { market, limit, model, dryRun });
   for (const r of results) {
     if (r.outcome === 'created') console.log(`+ ${r.detail}: ${r.title}`);
     else if (r.outcome === 'dry-run' && r.pkg) console.log(`\n[dry-run] ${r.pkg.post.headline}\n${r.pkg.post.body}\nNguồn: ${r.pkg.sources.map((s) => s.url).join(', ')}`);

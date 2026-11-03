@@ -1,22 +1,25 @@
-// Sinh bản tin ngành có nguồn từ RSS vào hàng chờ (GN-02/GN-03, bản demo bằng Gemini). Dùng chung cho CLI và giao diện.
+// Sinh bài có nguồn vào hàng chờ duyệt: bản tin từ RSS (tự động và nút bấm) và bài chiến dịch theo chủ đề.
+// Mỗi lượt gọi AI: kiểm trần chi phí trước, ghi chi phí sau, kiểm schema/nguồn/ngôn ngữ, rồi tạo ảnh thẻ.
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { languageMatchesMarket, unknownSources, validatePackage, type ContentPackage, type Market } from '../domain/package.ts';
 import { NEWS_RULES, NEWS_VOICE, newsUserPrompt, unusedItems } from '../domain/editorial.ts';
+import { campaignSourceAllowed, type AppSettings } from '../domain/appSettings.ts';
 import { dedupeByUrl, parseFeed, type FeedItem } from '../domain/rss.ts';
 import { sanitize } from '../domain/sanitizer.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
+import { renderCard, CARD_H, CARD_W } from '../media/card.ts';
 import { createGenerated } from './contents.ts';
+import { getAppSettings } from './appSettings.ts';
+import { capCheck, estimateCost, recordUsage } from './costs.ts';
 import { isPaused } from './settings.ts';
 
-export const FEEDS: Record<Market, string[]> = {
-  JP: ['https://xtech.nikkei.com/rss/index.rdf', 'https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml'],
-  VN: ['https://vnexpress.net/rss/so-hoa.rss'],
-};
-
-/** Đọc RSS của thị trường; một nguồn lỗi không làm hỏng cả lượt (FR-RES-03). */
-export async function fetchFeeds(market: Market): Promise<FeedItem[]> {
+/** Đọc RSS theo danh sách nguồn; một nguồn lỗi không làm hỏng cả lượt (FR-RES-03). */
+export async function fetchFeeds(feeds: string[]): Promise<FeedItem[]> {
   const all: FeedItem[] = [];
-  for (const u of FEEDS[market]) {
+  for (const u of feeds) {
     try {
       const r = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0 peapod-curate' }, signal: AbortSignal.timeout(20_000) });
       all.push(...parseFeed(await r.text(), 15));
@@ -31,7 +34,11 @@ export interface GenerateDeps {
   db: pg.Pool;
   gemini: GeminiClient;
   schema: object;
-  fetchItems: (m: Market) => Promise<FeedItem[]>;
+  /** Thư mục lưu ảnh thẻ (MEDIA_DIR). */
+  mediaDir: string;
+  /** Đọc RSS: mặc định dùng nguồn trong cấu hình. Có thể thay trong test. */
+  fetchItems?: (m: Market, feeds: string[]) => Promise<FeedItem[]>;
+  now?: () => Date;
 }
 
 export interface GenerateOptions {
@@ -49,43 +56,117 @@ export interface GenerateResult {
   pkg?: ContentPackage;
 }
 
-/** Sinh tối đa `limit` bài từ các mục RSS chưa dùng. Mỗi mục là một lần gọi riêng để không lẫn nguồn. */
+const PAUSED_DETAIL = 'Công tắc tạm dừng đang bật';
+
+/** Ảnh thẻ cho một bài: PNG lưu vào MEDIA_DIR/cards và ghi vào media_asset (revision 1). */
+export async function storeCard(db: pg.Pool, mediaDir: string, contentId: number, revision: number, pkg: ContentPackage, now = new Date()): Promise<string> {
+  const png = await renderCard({
+    market: pkg.market,
+    title: pkg.post.headline,
+    bullets: (pkg.media.card as { bullets?: string[] } | undefined)?.bullets ?? [],
+    source: pkg.sources[0]!.title,
+    date: new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).format(now),
+  });
+  const dir = path.join(mediaDir, 'cards');
+  await mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${contentId}-r${revision}.png`);
+  await writeFile(file, png);
+  const sha = createHash('sha256').update(png).digest('hex');
+  await db.query(
+    "INSERT INTO media_asset(content_id, revision, kind, path, sha256, width, height) VALUES ($1,$2,'IMAGE',$3,$4,$5,$6)",
+    [contentId, revision, file, sha, CARD_W, CARD_H],
+  );
+  return file;
+}
+
+/** Một mục nguồn -> một bài. Dùng chung cho bản tin RSS và bài chiến dịch. */
+async function generateFromItem(
+  deps: GenerateDeps,
+  s: AppSettings,
+  market: Market,
+  item: { title: string; url: string; summary: string },
+  model: string,
+  purpose: 'NEWS' | 'CAMPAIGN',
+): Promise<GenerateResult> {
+  const title = item.title.slice(0, 60);
+  const cap = await capCheck(deps.db, s, deps.now?.());
+  if (!cap.allowed) return { title, outcome: 'skipped', detail: cap.reason! };
+
+  const sanitized = sanitize(`${item.title} — ${item.summary}`);
+  try {
+    const gen = await deps.gemini.generateJson({
+      model,
+      system: `${NEWS_RULES}\n\n${NEWS_VOICE[market]}`,
+      user: newsUserPrompt(market, `1. ${sanitized.text}\n   URL: ${item.url}`),
+      schema: deps.schema,
+    });
+    const costUsd = estimateCost({ inputTokens: gen.usage.inputTokens, outputTokens: gen.usage.outputTokens, thoughtTokens: gen.usage.thoughtTokens }, s);
+    await recordUsage(deps.db, { market, purpose, model, usage: gen.usage, costUsd });
+
+    const v = validatePackage(gen.json);
+    if (!v.ok) return { title, outcome: 'skipped', detail: `schema: ${v.errors[0]}` };
+    const pkg = v.value;
+    if (pkg.market !== market) return { title, outcome: 'skipped', detail: 'sai thị trường' };
+    if (unknownSources(pkg, [item.url]).length) return { title, outcome: 'skipped', detail: 'nguồn không nằm trong nguồn đã cung cấp' };
+    if (!languageMatchesMarket(pkg.post.body, market)) return { title, outcome: 'skipped', detail: 'sai ngôn ngữ' };
+
+    const id = await createGenerated(deps.db, pkg, model);
+    if (pkg.media.engine === 'REMOTION_CARD') {
+      try {
+        await storeCard(deps.db, deps.mediaDir, id, 1, pkg, deps.now?.());
+      } catch (e) {
+        console.warn(`cảnh báo: chưa dựng được ảnh thẻ bài #${id}: ${(e as Error).message.slice(0, 120)}`);
+      }
+    }
+    return { title: pkg.post.headline, outcome: 'created', detail: `bài #${id}`, id, pkg };
+  } catch (e) {
+    return { title, outcome: 'error', detail: (e as Error).message.slice(0, 160) };
+  }
+}
+
+/** Sinh tối đa `limit` bản tin từ các mục RSS chưa dùng. */
 export async function generateNews(deps: GenerateDeps, opts: GenerateOptions): Promise<GenerateResult[]> {
-  if (await isPaused(deps.db)) return [{ title: '', outcome: 'skipped', detail: 'Công tắc tạm dừng đang bật' }];
+  if (await isPaused(deps.db)) return [{ title: '', outcome: 'skipped', detail: PAUSED_DETAIL }];
+  const s = await getAppSettings(deps.db);
+  const fetchItems = deps.fetchItems ?? ((_m: Market, feeds: string[]) => fetchFeeds(feeds));
 
   const used = new Set((await deps.db.query<{ url: string }>(`SELECT DISTINCT jsonb_array_elements(package->'sources')->>'url' AS url FROM content_revision`)).rows.map((r) => r.url));
-  const candidates = unusedItems(await deps.fetchItems(opts.market), used);
+  const candidates = unusedItems(await fetchItems(opts.market, s.feeds[opts.market]), used);
   const out: GenerateResult[] = [];
   let made = 0;
-
   for (const item of candidates) {
     if (made >= opts.limit) break;
-    const s = sanitize(`${item.title} — ${item.summary}`);
-    const title = item.title.slice(0, 60);
-    try {
-      const gen = await deps.gemini.generateJson({
-        model: opts.model,
-        system: `${NEWS_RULES}\n\n${NEWS_VOICE[opts.market]}`,
-        user: newsUserPrompt(opts.market, `1. ${s.text}\n   URL: ${item.url}`),
-        schema: deps.schema,
-      });
-      const v = validatePackage(gen.json);
-      if (!v.ok) { out.push({ title, outcome: 'skipped', detail: `schema: ${v.errors[0]}` }); continue; }
-      const pkg = v.value;
-      if (pkg.market !== opts.market) { out.push({ title, outcome: 'skipped', detail: 'sai thị trường' }); continue; }
-      if (unknownSources(pkg, [item.url]).length) { out.push({ title, outcome: 'skipped', detail: 'nguồn không nằm trong RSS' }); continue; }
-      if (!languageMatchesMarket(pkg.post.body, opts.market)) { out.push({ title, outcome: 'skipped', detail: 'sai ngôn ngữ' }); continue; }
-
+    if (opts.dryRun) {
+      out.push({ title: item.title.slice(0, 60), outcome: 'dry-run', detail: 'chưa gọi AI' });
       made++;
-      if (opts.dryRun) {
-        out.push({ title: pkg.post.headline, outcome: 'dry-run', detail: 'chưa ghi', pkg });
-      } else {
-        const id = await createGenerated(deps.db, pkg, opts.model);
-        out.push({ title: pkg.post.headline, outcome: 'created', detail: `bài #${id}`, id, pkg });
-      }
-    } catch (e) {
-      out.push({ title, outcome: 'error', detail: (e as Error).message.slice(0, 160) });
+      continue;
     }
+    const r = await generateFromItem(deps, s, opts.market, item, opts.model, 'NEWS');
+    if (r.outcome === 'created') made++;
+    out.push(r);
+    if (r.outcome === 'skipped' && r.detail.startsWith('Đã đạt trần')) break;
   }
   return out;
+}
+
+export interface CampaignInput {
+  market: Market;
+  topic: string;
+  sourceUrl: string;
+  /** Nội dung nguồn do người dùng dán vào (hệ thống không tự tải trang). */
+  sourceText: string;
+  note?: string;
+  model: string;
+}
+
+/** Bài chiến dịch: người duyệt nêu chủ đề, nguồn (https, thuộc miền được phép) và dán nội dung nguồn. */
+export async function generateCampaign(deps: GenerateDeps, input: CampaignInput): Promise<GenerateResult> {
+  if (await isPaused(deps.db)) return { title: input.topic, outcome: 'skipped', detail: PAUSED_DETAIL };
+  const s = await getAppSettings(deps.db);
+  if (!campaignSourceAllowed(input.sourceUrl, s.campaignDomains)) {
+    return { title: input.topic, outcome: 'skipped', detail: `Nguồn phải là https và thuộc miền được phép: ${s.campaignDomains.join(', ')}` };
+  }
+  if (input.sourceText.trim().length < 80) return { title: input.topic, outcome: 'skipped', detail: 'Nội dung nguồn quá ngắn (cần ít nhất 80 ký tự)' };
+  const summary = [input.sourceText.trim(), input.note?.trim() ? `Ghi chú chủ đề: ${input.note.trim()}` : ''].filter(Boolean).join('\n');
+  return generateFromItem(deps, s, input.market, { title: input.topic, url: input.sourceUrl, summary }, input.model, 'CAMPAIGN');
 }

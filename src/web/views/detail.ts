@@ -3,6 +3,7 @@ import type { ContentDetail } from '../../services/contents.ts';
 import { ACTION, FORMAT, marketTag, status, when, zoneLabel } from '../components.ts';
 import { empty, html, type Safe } from '../html.ts';
 import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
+import type { DiffOp, PackageDiff } from '../../domain/diff.ts';
 
 export interface DetailView {
   ctx: Omit<PageCtx, 'title' | 'nav'>;
@@ -19,6 +20,21 @@ export interface DetailView {
   canPublish: boolean;
   /** Liên kết tới bài trên Facebook khi đã có ID bài. */
   fbUrl?: string;
+  /** Bài đã có ảnh thẻ cho bản hiện tại. */
+  hasCard?: boolean;
+  /** Khác biệt với bản trước (nếu có). */
+  changes?: PackageDiff;
+}
+
+function diffPanel(c?: PackageDiff): Safe {
+  if (!c) return empty;
+  const block = (title: string, ops: DiffOp[]): Safe =>
+    ops.some((o) => o.type !== 'eq')
+      ? html`<div class="diff-b"><div class="small muted">${title}</div><div class="diff">${ops.map((o) => html`<div class="d-${o.type}">${o.type === 'add' ? '+ ' : o.type === 'del' ? '− ' : '  '}${o.text}</div>`)}</div></div>`
+      : empty;
+  return html`<section class="panel"><div class="panel-h">So với bản trước</div><div class="panel-b">
+    ${c.changed ? html`${block('Tiêu đề', c.headline)}${block('Thân bài', c.body)}${block('Lời kêu gọi', c.call_to_action)}${block('Hashtag', c.hashtags)}` : html`<span class="muted small">Không có thay đổi nội dung so với bản trước.</span>`}
+  </div></section>`;
 }
 
 // Bài đã hẹn giờ trên Meta không sửa được: phải hủy hẹn giờ trước (xem services/publish.ts).
@@ -131,8 +147,8 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
       ${flashBox(v.flash)}
       <div class="split">
         <div>
-          <div class="panel"><div class="panel-h">Xem trước bài đăng</div><div class="panel-b">${preview}</div></div>
-          ${sources}${editForm}
+          <div class="panel"><div class="panel-h">Xem trước bài đăng</div><div class="panel-b">${preview}${v.hasCard ? html`<div class="card-prev"><img src="/contents/${it.id}/card" alt="Ảnh thẻ của bài" width="540" height="675" loading="lazy"><div class="small muted">Ảnh thẻ dựng tự động. Đây là ảnh sẽ đăng kèm bài.</div></div>` : empty}</div></div>
+          ${diffPanel(v.changes)}${sources}${editForm}
         </div>
         <aside>${decision}${publishBox}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
       </div>

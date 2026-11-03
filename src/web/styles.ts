@@ -78,7 +78,8 @@ p{margin:0 0 8px}
 .list li{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
 .list li:last-child{border-bottom:0;padding-bottom:0}.list li:first-child{padding-top:0}
 .list .when{flex:0 0 96px;font-size:12.5px;color:var(--ink-3)}
-.list .what{min-width:0}.list .what a{color:var(--ink);font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list .what{min-width:0}.list .what .mono{white-space:normal}
+.list .what a{color:var(--ink);font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hbar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}.hbar span{display:block;height:100%;background:var(--accent)}
 
 /* lịch đăng */
@@ -102,10 +103,10 @@ p{margin:0 0 8px}
 label{display:block;font-weight:600;font-size:13px;margin:0 0 4px}
 .field{margin-bottom:14px}
 .hint{font-size:12.5px;color:var(--ink-3);margin-top:4px}
-input[type=text],input[type=email],input[type=password],input[type=datetime-local],textarea,select{width:100%;height:34px;padding:0 10px;border:1px solid var(--line-2);border-radius:4px;background:#fff;color:var(--ink);font:inherit}
+input[type=text],input[type=email],input[type=password],input[type=datetime-local],input[type=number],input[type=time],input[type=url],input[type=search],textarea,select{width:100%;height:34px;padding:0 10px;border:1px solid var(--line-2);border-radius:4px;background:#fff;color:var(--ink);font:inherit}
 textarea{height:auto;padding:8px 10px;min-height:96px;resize:vertical;line-height:1.55}
 textarea.tall{min-height:260px}
-input:focus,textarea:focus,select:focus{outline:2px solid #b9cdf2;outline-offset:0;border-color:var(--accent)}
+input:focus,textarea:focus,select:focus,input:focus-visible{outline:2px solid #b9cdf2;outline-offset:0;border-color:var(--accent)}
 .check{display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:0 0 6px}
 .check input{margin-top:3px}
 
@@ -179,6 +180,36 @@ ol.claims{margin:0 0 12px;padding-left:20px}ol.claims li{margin-bottom:6px}
 details.more{border-top:1px solid var(--line);padding-top:12px;margin-top:14px}
 details.more>summary{cursor:pointer;font-weight:600;color:var(--ink-2);margin-bottom:10px}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* biểu mẫu hai cột */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+.form-grid .field.full,.field.full,.form-grid .savebar,.savebar{grid-column:1/-1}
+.savebar{display:flex;justify-content:flex-end;gap:10px;padding-top:6px}
+.field{margin-bottom:14px;min-width:0}
+.field textarea,.form-grid textarea{min-height:88px}
+.errlist{margin:6px 0 0;padding-left:20px}
+.rules{margin:0;padding-left:20px;line-height:1.75}
+.settings{display:flex;flex-direction:column;gap:16px}
+.settings .panel{margin:0}
+.settings .panel-b{padding-bottom:4px}
+
+/* biểu đồ chi phí theo ngày (cột, CSS thuần) */
+.daybars{display:flex;gap:6px;align-items:flex-end;height:180px;overflow-x:auto;padding-bottom:2px}
+.dayb{flex:1;min-width:24px;height:100%;display:flex;flex-direction:column;align-items:center}
+.dayb-col{flex:1;width:100%;max-width:34px;display:flex;align-items:flex-end;background:#f3f4f6;border-radius:4px;overflow:hidden}
+.dayb-col span{display:block;width:100%;background:var(--accent);border-radius:4px 4px 0 0}
+.dayb-l{font-size:11px;color:var(--ink-3);margin-top:6px}
+
+/* ảnh thẻ và so sánh bản sửa */
+.card-prev{margin-top:14px;text-align:center}
+.card-prev img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px}
+.card-prev .small{margin-top:6px}
+.diff-b{margin-bottom:12px}
+.diff{font-family:Consolas,"SFMono-Regular",monospace;font-size:12.5px;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:6px}
+.diff div{padding:3px 10px;white-space:pre-wrap;word-break:break-word}
+.d-add{background:#eaf7ee;color:#166534}
+.d-del{background:#fdf0ee;color:#b42318}
+.d-eq{color:var(--ink-3)}
 
 /* banner công tắc tạm dừng */
 .banner{background:var(--bad-bg);color:var(--bad);border-bottom:1px solid #f1c3bd;padding:10px 32px;font-size:13.5px}

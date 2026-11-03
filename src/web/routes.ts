@@ -8,9 +8,19 @@ import * as svc from '../services/contents.ts';
 import { AppError } from '../services/contents.ts';
 import { getStats, pendingCount } from '../services/stats.ts';
 import { cancelScheduled, publishApproved, publishOne, reconcileScheduled, type PublisherDeps } from '../services/publish.ts';
-import { generateNews, fetchFeeds } from '../services/generate.ts';
+import { generateCampaign, generateNews } from '../services/generate.ts';
 import { isPaused, setPaused } from '../services/settings.ts';
 import { createUser, listUsers, resetPassword, setDisabled } from '../services/users.ts';
+import { getAppSettings, saveAppSettings } from '../services/appSettings.ts';
+import { costSummary } from '../services/costs.ts';
+import { changeOwnPassword } from '../services/account.ts';
+import { diffPackages } from '../domain/diff.ts';
+import { notifySlack } from '../providers/slack.ts';
+import { readFile } from 'node:fs/promises';
+import { settingsPage } from './views/settings.ts';
+import { costsPage } from './views/costs.ts';
+import { campaignPage } from './views/campaign.ts';
+import { accountPage } from './views/account.ts';
 import { page, type Flash } from './layout.ts';
 import { html as h } from './html.ts';
 import { CSS } from './styles.ts';
@@ -30,7 +40,7 @@ export interface WebOptions {
   /** Có khi đã cấu hình Trang Meta. Thiếu thì không đăng và không hủy được bài đã hẹn (không xóa được bên Meta). */
   publisher?: PublisherDeps;
   /** Có khi đã cấu hình khóa Gemini. Thiếu thì không tạo được bản tin mới từ giao diện. */
-  generator?: { gemini: GeminiClient; schema: object };
+  generator?: { gemini: GeminiClient; schema: object; mediaDir: string; model: string };
 }
 
 const SESSION_TTL = 8 * 3600;
@@ -198,7 +208,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     const limit = Math.min(3, Math.max(1, Number(b.limit) || 1));
     if (!o.generator) return renderQueue(s, reply, {}, { kind: 'err', text: 'Chưa cấu hình khóa Gemini (GEMINI_API_KEY), không tạo được bản tin.' });
     if (!['VN', 'JP'].includes(market) || !canReview(s.actor, market)) return renderQueue(s, reply, {}, { kind: 'err', text: 'Bạn không có quyền tạo bản tin cho thị trường này.' });
-    const results = await generateNews({ db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, fetchItems: fetchFeeds }, { market, limit, model: 'gemini-3.6-flash' });
+    const results = await generateNews({ db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, mediaDir: o.generator.mediaDir }, { market, limit, model: o.generator.model });
     const made = results.filter((r) => r.outcome === 'created').length;
     const skipped = results.filter((r) => r.outcome === 'skipped' && r.detail !== 'Công tắc tạm dừng đang bật').length;
     const failed = results.filter((r) => r.outcome === 'error').length;
@@ -223,7 +233,15 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   // --- chi tiết ---
   async function showDetail(s: Session, reply: FastifyReply, id: number, extra: { flash?: Flash; draft?: { headline: string; body: string; call_to_action: string; hashtags: string }; code?: number } = {}) {
     const d = await svc.getContent(o.db, s.actor, id);
-    const slot = nextBusinessSlot(d.item.market, DEFAULT_LOCAL_TIME[d.item.market]);
+    const settings = await getAppSettings(o.db);
+    const slot = nextBusinessSlot(d.item.market, settings.defaultPostTime[d.item.market] ?? DEFAULT_LOCAL_TIME[d.item.market]);
+    // So sánh với bản trước (U-04): chỉ khi có từ hai revision trở lên.
+    let changes: ReturnType<typeof diffPackages> | undefined;
+    if (d.item.current_revision > 1) {
+      const prev = await o.db.query<{ package: unknown }>('SELECT package FROM content_revision WHERE content_id = $1 AND revision = $2', [id, d.item.current_revision - 1]);
+      if (prev.rows[0]) changes = diffPackages(prev.rows[0].package as typeof d.package, d.package);
+    }
+    const card = await o.db.query("SELECT 1 FROM media_asset WHERE content_id = $1 AND revision = $2 AND kind = 'IMAGE'", [id, d.item.current_revision]);
     return html(reply, detailView({
       ctx: ctxOf(s), d, csrf: s.csrf,
       can: { review: canReview(s.actor, d.item.market), cancel: canCancel(s.actor, d.item.market) },
@@ -231,6 +249,8 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
       scheduleDefault: toLocalInput(d.item.scheduled_at ?? slot, d.item.market),
       canPublish: !!o.publisher && canReview(s.actor, d.item.market) && d.item.state === 'APPROVED',
       fbUrl: d.item.fb_post_id ? `https://www.facebook.com/${d.item.fb_post_id}` : undefined,
+      hasCard: (card.rowCount ?? 0) > 0,
+      changes,
       draft: extra.draft, flash: extra.flash,
     }), extra.code ?? 200);
   }
@@ -305,6 +325,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     const pause = str(b.action) === 'pause';
     if (pause && b.confirm !== '1') return html(reply, dashboardView(ctxOf(s), await getStats(o.db, s.actor), await svc.listAudit(o.db, s.actor, 6), visibleMarkets(s.actor), { metaOn: !!o.publisher, geminiOn: !!o.generator, paused: s.paused, isAdmin: true, flash: { kind: 'warn', text: 'Hãy tick xác nhận trước khi bật công tắc tạm dừng.' } }), 422);
     await setPaused(o.db, pause, s.actor.email);
+    void notifySlack(pause ? `⏸️ ${s.actor.name} đã BẬT công tắc tạm dừng PeaPod` : `▶️ ${s.actor.name} đã TẮT công tắc tạm dừng PeaPod`);
     return reply.redirect(`/?ok=${pause ? 'paused' : 'resumed'}`);
   }));
 
@@ -350,6 +371,89 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     } catch (e) {
       return renderUsers(s, reply, { flash: userErr(e) }, 422);
     }
+  }));
+
+  // --- ảnh thẻ của bài (E6) ---
+  app.get('/contents/:id/card', guarded(async (s, req, reply) => {
+    try {
+      const d = await svc.getContent(o.db, s.actor, idOf(req));
+      const a = await o.db.query<{ path: string }>("SELECT path FROM media_asset WHERE content_id = $1 AND revision = $2 AND kind = 'IMAGE' ORDER BY id DESC LIMIT 1", [d.item.id, d.item.current_revision]);
+      if (!a.rows[0]) return reply.code(404).type('text/plain; charset=utf-8').send('Chưa có ảnh thẻ');
+      return reply.header('Cache-Control', 'private, max-age=60').type('image/png').send(await readFile(a.rows[0].path));
+    } catch (e) {
+      if (e instanceof AppError) return reply.code(404).send('Không tìm thấy');
+      throw e;
+    }
+  }));
+
+  // --- cài đặt vận hành (quản trị viên) ---
+  app.get('/settings', adminOnly(async (s, req, reply) => {
+    const ok = str((req.query as Record<string, unknown>).ok) === '1';
+    return html(reply, settingsPage(ctxOf(s), { settings: await getAppSettings(o.db), saved: ok }));
+  }));
+
+  app.post('/settings', adminOnly(async (s, req, reply) => {
+    const form = (req.body ?? {}) as Record<string, unknown>;
+    const r = await saveAppSettings(o.db, form, s.actor.email);
+    if (!r.ok) return html(reply, settingsPage(ctxOf(s), { form: form as Record<string, string>, errors: r.errors }), 422);
+    return reply.redirect('/settings?ok=1');
+  }));
+
+  // --- chi phí AI (quản trị viên) ---
+  app.get('/costs', adminOnly(async (s, _req, reply) => {
+    const [sum, settings] = await Promise.all([costSummary(o.db), getAppSettings(o.db)]);
+    return html(reply, costsPage(ctxOf(s), { sum, settings }));
+  }));
+
+  // --- bài chiến dịch theo chủ đề ---
+  app.get('/campaign', guarded(async (s, _req, reply) => {
+    const markets = visibleMarkets(s.actor).filter((m) => canReview(s.actor, m));
+    return html(reply, campaignPage(ctxOf(s), { markets, domains: (await getAppSettings(o.db)).campaignDomains, aiOn: !!o.generator }));
+  }));
+
+  app.post('/campaign', guarded(async (s, req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const market = str(b.market).toUpperCase() as Market;
+    const markets = visibleMarkets(s.actor).filter((m) => canReview(s.actor, m));
+    const domains = (await getAppSettings(o.db)).campaignDomains;
+    const form = { market, topic: str(b.topic), sourceUrl: str(b.sourceUrl), sourceText: str(b.sourceText), note: str(b.note) };
+    const fail = (text: string) => html(reply, campaignPage(ctxOf(s), { markets, domains, aiOn: !!o.generator, form, flash: { kind: 'err', text } }), 422);
+    if (!o.generator) return fail('Chưa cấu hình khóa Gemini (GEMINI_API_KEY) nên không tạo được bài.');
+    if (!markets.includes(market)) return fail('Bạn không có quyền tạo bài cho thị trường này.');
+    if (!form.topic.trim()) return fail('Cần nhập chủ đề.');
+    const r = await generateCampaign(
+      { db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, mediaDir: o.generator.mediaDir },
+      { market, topic: form.topic.trim().slice(0, 60), sourceUrl: form.sourceUrl.trim(), sourceText: form.sourceText, note: form.note, model: o.generator.model },
+    );
+    if (r.outcome === 'created') return reply.redirect(`/contents/${r.id}`);
+    return fail(r.outcome === 'error' ? `Lỗi khi gọi AI: ${r.detail}` : r.detail);
+  }));
+
+  // --- tài khoản của chính mình ---
+  app.get('/account', guarded(async (s, _req, reply) => html(reply, accountPage(ctxOf(s)))));
+
+  app.post('/account/password', guarded(async (s, req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    if (str(b.next) !== str(b.confirm)) return html(reply, accountPage(ctxOf(s), { flash: { kind: 'err', text: 'Mật khẩu xác nhận không khớp.' } }), 422);
+    try {
+      await changeOwnPassword(o.db, s.actor.email, str(b.current), str(b.next));
+      return html(reply, accountPage(ctxOf(s), { flash: { kind: 'ok', text: 'Đã đổi mật khẩu. Lần đăng nhập sau dùng mật khẩu mới.' } }));
+    } catch (e) {
+      if (!(e instanceof AppError)) throw e;
+      return html(reply, accountPage(ctxOf(s), { flash: { kind: 'err', text: e.message } }), 422);
+    }
+  }));
+
+  // --- xuất nhật ký kiểm toán (CSV, có BOM để Excel đọc tiếng Việt) ---
+  app.get('/audit.csv', guarded(async (s, _req, reply) => {
+    const rows = await svc.listAudit(o.db, s.actor, 1000);
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['thoi_diem', 'nguoi_thuc_hien', 'thao_tac', 'bai', 'ban', 'thi_truong', 'ghi_chu'];
+    const body = rows.map((r) => [new Date(r.created_at).toISOString(), r.actor, r.action, r.content_id, r.revision, r.market, r.note].map(esc).join(','));
+    return reply
+      .header('Content-Disposition', 'attachment; filename="nhat-ky-kiem-toan.csv"')
+      .type('text/csv; charset=utf-8')
+      .send(`﻿${[head.join(','), ...body].join('\r\n')}\r\n`);
   }));
 
   // --- kiểm toán ---

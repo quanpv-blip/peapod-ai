@@ -1,6 +1,8 @@
 // Tích hợp các chức năng vận hành mới trên PostgreSQL thật: công tắc tạm dừng, người dùng, sinh bản tin, tìm kiếm.
 // Bỏ qua nếu không có TEST_DATABASE_URL.
 import { randomBytes } from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,8 +19,9 @@ import { isPaused, setPaused } from '../src/services/settings.ts';
 import { createUser, listUsers, resetPassword, setDisabled } from '../src/services/users.ts';
 
 const URL_ = process.env.TEST_DATABASE_URL;
+const MEDIA = path.join(os.tmpdir(), 'pp-test-media');
 const d = URL_ ? describe : describe.skip;
-const MIGRATIONS = ['001_init.sql', '002_users.sql', '003_publish_audit.sql', '004_settings.sql', '005_rename_app_config.sql'];
+const MIGRATIONS = ['001_init.sql', '002_users.sql', '003_publish_audit.sql', '004_settings.sql', '005_rename_app_config.sql', '006_ai_usage.sql'];
 
 const vn: Actor = { email: 'vn@t', name: 'VN', roles: ['approver_vn'] };
 const admin: Actor = { email: 'ad@t', name: 'Admin', roles: ['admin'] };
@@ -81,7 +84,7 @@ d('chức năng vận hành (PostgreSQL thật)', () => {
     it('bật: sinh bản tin cũng bị chặn', async () => {
       await setPaused(db, true, 'admin@t');
       const gemini = { generateJson: vi.fn() } as unknown as GeminiClient;
-      const out = await generateNews({ db, gemini, schema, fetchItems: async () => [{ title: 'A', url: 'https://x.test/a', summary: '' }] }, { market: 'VN', limit: 1, model: 'm' });
+      const out = await generateNews({ db, gemini, schema, mediaDir: MEDIA, fetchItems: async () => [{ title: 'A', url: 'https://x.test/a', summary: '' }] }, { market: 'VN', limit: 1, model: 'm' });
       expect(out[0]!.detail).toContain('Công tắc tạm dừng');
       expect(gemini.generateJson).not.toHaveBeenCalled();
     });
@@ -93,12 +96,12 @@ d('chức năng vận hành (PostgreSQL thật)', () => {
 
     it('tạo bài IN_REVIEW từ mục RSS; lần sau không tạo lại cùng nguồn', async () => {
       const g = gemini(pkg('https://x.test/a'));
-      const first = await generateNews({ db, gemini: g, schema, fetchItems: async () => items }, { market: 'VN', limit: 1, model: 'm' });
+      const first = await generateNews({ db, gemini: g, schema, mediaDir: MEDIA, fetchItems: async () => items }, { market: 'VN', limit: 1, model: 'm' });
       expect(first[0]!.outcome).toBe('created');
       const state = (await db.query("SELECT state FROM content_item WHERE id = $1", [first[0]!.id])).rows[0].state;
       expect(state).toBe('IN_REVIEW');
 
-      const second = await generateNews({ db, gemini: g, schema, fetchItems: async () => items }, { market: 'VN', limit: 1, model: 'm' });
+      const second = await generateNews({ db, gemini: g, schema, mediaDir: MEDIA, fetchItems: async () => items }, { market: 'VN', limit: 1, model: 'm' });
       expect(second).toEqual([]);
     });
 
@@ -106,7 +109,7 @@ d('chức năng vận hành (PostgreSQL thật)', () => {
       // Mục RSS mới (URL khác) nhưng AI trả nguồn lạ: phải bị loại.
       const g = gemini(pkg('https://evil.test/z'));
       const fresh: FeedItem[] = [{ title: 'Tin B', url: 'https://x.test/b', summary: '' }];
-      const out = await generateNews({ db, gemini: g, schema, fetchItems: async () => fresh }, { market: 'VN', limit: 1, model: 'm' });
+      const out = await generateNews({ db, gemini: g, schema, mediaDir: MEDIA, fetchItems: async () => fresh }, { market: 'VN', limit: 1, model: 'm' });
       expect(out[0]!.outcome).toBe('skipped');
       expect(out[0]!.detail).toContain('nguồn');
     });

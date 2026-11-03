@@ -1,10 +1,12 @@
 // Đăng bài lên Meta (P-01/P-02/P-03): hẹn giờ bài đã duyệt, đối soát sau giờ hẹn, hủy an toàn.
 // Quy tắc chống đăng trùng: ghi PENDING và cam kết DB TRƯỚC khi gọi Meta; tạo bài không tự thử lại (idempotent=false).
+import { readFile } from 'node:fs/promises';
 import type pg from 'pg';
 import { canCancel, type Actor } from '../auth.ts';
 import { packageHash, type ContentPackage, type Market } from '../domain/package.ts';
 import { HttpError } from '../domain/retry.ts';
-import { feedPost, isDefinitiveRejection, scheduleGate } from '../domain/publish.ts';
+import { bucUsagePct, feedPost, isDefinitiveRejection, scheduleGate } from '../domain/publish.ts';
+import { getFlag, setFlag } from './appSettings.ts';
 import { assertTransition, type State } from '../domain/states.ts';
 import type { MetaClient } from '../providers/meta.ts';
 import { AppError, getContent, hasPendingPublish } from './contents.ts';
@@ -20,6 +22,9 @@ export interface PublisherDeps {
   meta: MetaClient;
   pages: Partial<Record<Market, PagePair>>;
   now?: () => Date;
+  /** Ngưỡng BUC (%) và thời gian tạm dừng (phút) khi vượt. Mặc định 80% và 30 phút (META_BUC_PAUSE_*). */
+  bucPausePct?: number;
+  bucPauseMinutes?: number;
 }
 
 export type Outcome = 'scheduled' | 'published' | 'failed' | 'returned' | 'skipped' | 'dry-run' | 'removed';
@@ -78,7 +83,7 @@ async function lockRow(c: pg.PoolClient, id: number): Promise<Row | undefined> {
   return r.rows[0];
 }
 
-type Claim = { kind: 'done'; result: Result } | { kind: 'ready'; row: Row; page: PagePair; pkg: ContentPackage; hash: string; attemptId: number };
+type Claim = { kind: 'done'; result: Result } | { kind: 'ready'; row: Row; page: PagePair; pkg: ContentPackage; hash: string; attemptId: number; photoPath?: string };
 
 /** Bước chốt: khóa bài, kiểm tra, rồi ghi PENDING và commit. Từ đây trở đi nếu tiến trình chết, lần sau sẽ thấy PENDING và dừng. */
 async function claim(deps: PublisherDeps, id: number, now: Date, dryRun: boolean): Promise<Claim> {
@@ -122,14 +127,22 @@ async function claim(deps: PublisherDeps, id: number, now: Date, dryRun: boolean
       await log(c, row, rev.package_hash, 'PUBLISH_FAILED', gate.reason);
       return done('returned', gate.reason);
     }
+    // Bài dựng từ thẻ phải đăng kèm ảnh đã dựng cho đúng revision; thiếu thì không đăng văn bản thay thế một cách im lặng.
+    const img = await c.query<{ path: string }>("SELECT path FROM media_asset WHERE content_id = $1 AND revision = $2 AND kind = 'IMAGE' ORDER BY id DESC LIMIT 1", [id, row.current_revision]);
+    const photoPath = img.rows[0]?.path;
+    if (rev.package.media.engine === 'REMOTION_CARD' && !photoPath) {
+      await move(c, row, 'IN_REVIEW', { lastError: 'Thiếu ảnh thẻ cho bản này. Dựng lại ảnh rồi hẹn lại.' });
+      await log(c, row, rev.package_hash, 'PUBLISH_FAILED', 'Thiếu ảnh thẻ');
+      return done('returned', 'thiếu ảnh thẻ');
+    }
     if (dryRun) {
       await c.query('ROLLBACK');
-      return { kind: 'done', result: { id, outcome: 'dry-run', detail: feedPost(rev.package).message.slice(0, 60) } };
+      return { kind: 'done', result: { id, outcome: 'dry-run', detail: `${photoPath ? 'ảnh + ' : ''}${feedPost(rev.package).message.slice(0, 50)}` } };
     }
 
-    const a = await c.query<{ id: string }>("INSERT INTO publish_attempt(content_id, step, ok, error) VALUES ($1, 'FEED_POST', false, 'PENDING') RETURNING id", [id]);
+    const a = await c.query<{ id: string }>("INSERT INTO publish_attempt(content_id, step, ok, error) VALUES ($1, $2, false, 'PENDING') RETURNING id", [id, photoPath ? 'PHOTO_POST' : 'FEED_POST']);
     await c.query('COMMIT');
-    return { kind: 'ready', row, page, pkg: rev.package, hash: rev.package_hash, attemptId: Number(a.rows[0]!.id) };
+    return { kind: 'ready', row, page, pkg: rev.package, hash: rev.package_hash, attemptId: Number(a.rows[0]!.id), photoPath };
   } catch (e) {
     await c.query('ROLLBACK').catch(() => undefined);
     throw e;
@@ -192,24 +205,44 @@ async function recordSuccess(deps: PublisherDeps, page: PagePair, row: Row, atte
 }
 
 /** Hẹn giờ một bài đã duyệt lên Meta. */
+/** Meta đang tạm khóa đăng do lượt gọi (BUC)? Đọc mốc hết hạn trong cấu hình. */
+async function bucPaused(db: pg.Pool, now: Date): Promise<boolean> {
+  const until = Number(await getFlag(db, BUC_UNTIL_KEY));
+  return Number.isFinite(until) && until > now.getTime();
+}
+
+export const BUC_UNTIL_KEY = 'buc_pause_until';
+
 export async function publishOne(deps: PublisherDeps, id: number, dryRun = false): Promise<Result> {
   if (!dryRun && (await isPaused(deps.db))) return { id, outcome: 'skipped', detail: 'Công tắc tạm dừng đang bật' };
   const now = deps.now?.() ?? new Date();
+  if (!dryRun && (await bucPaused(deps.db, now))) return { id, outcome: 'skipped', detail: 'Meta đang tạm giới hạn lượt gọi (BUC), thử lại sau' };
   const c0 = await claim(deps, id, now, dryRun);
   if (c0.kind === 'done') return c0.result;
-  const { row, page, pkg, hash, attemptId } = c0;
+  const { row, page, pkg, hash, attemptId, photoPath } = c0;
   let fbId: string;
   let status: number;
   let trace: string | null;
+  let headers: Headers | undefined;
   try {
     const at = Math.floor(row.scheduled_at!.getTime() / 1000);
-    const res = await deps.meta.postFeed(page.token, page.id, { ...feedPost(pkg), published: false, scheduled_publish_time: at });
-    fbId = String((res.json as { id?: unknown }).id ?? '');
+    const res = photoPath
+      ? await deps.meta.postPhoto(page.token, page.id, await readFile(photoPath), { caption: feedPost(pkg).message, published: false, scheduled_publish_time: at })
+      : await deps.meta.postFeed(page.token, page.id, { ...feedPost(pkg), published: false, scheduled_publish_time: at });
+    const j = res.json as { id?: unknown; post_id?: unknown };
+    // Ảnh trả về cả id ảnh lẫn post_id; đối soát dùng post_id (bài trên Trang).
+    fbId = String(j.post_id ?? j.id ?? '');
     if (!fbId) throw new Error('Meta không trả về mã bài');
     status = res.status;
     trace = res.headers.get('x-fb-trace-id');
+    headers = res.headers;
   } catch (e) {
     return recordFailure(deps, row, attemptId, hash, e);
+  }
+  const bucPct = bucUsagePct(headers?.get('x-business-use-case-usage') ?? null);
+  if (bucPct >= (deps.bucPausePct ?? 80)) {
+    const minutes = deps.bucPauseMinutes ?? 30;
+    await setFlag(deps.db, BUC_UNTIL_KEY, String(now.getTime() + minutes * 60_000), 'system:buc');
   }
   return recordSuccess(deps, page, row, attemptId, hash, fbId, status, trace);
 }
@@ -219,6 +252,7 @@ export async function publishApproved(deps: PublisherDeps, opts: { dryRun?: bool
   const markets = Object.keys(deps.pages) as Market[];
   if (markets.length === 0) return [];
   if (!opts.dryRun && (await isPaused(deps.db))) return [{ id: 0, outcome: 'skipped', detail: 'Công tắc tạm dừng đang bật: không hẹn bài mới' }];
+  if (!opts.dryRun && (await bucPaused(deps.db, deps.now?.() ?? new Date()))) return [{ id: 0, outcome: 'skipped', detail: 'Meta đang tạm giới hạn lượt gọi (BUC): không hẹn bài mới' }];
   const r = await deps.db.query<{ id: string }>("SELECT id FROM content_item WHERE state = 'APPROVED' AND market = ANY($1) ORDER BY scheduled_at NULLS LAST LIMIT 20", [markets]);
   const out: Result[] = [];
   for (const x of r.rows) out.push(await publishOne(deps, Number(x.id), opts.dryRun));
@@ -226,6 +260,12 @@ export async function publishApproved(deps: PublisherDeps, opts: { dryRun?: bool
 }
 
 const GRACE_MS = 60 * 60_000;
+
+/** Id các bài đang hẹn giờ của Trang (tối đa 100, đủ cho quy mô hiện tại). */
+async function scheduledIds(deps: PublisherDeps, page: PagePair): Promise<string[]> {
+  const res = await deps.meta.get(page.token, `${page.id}/scheduled_posts`, { fields: 'id', limit: '100' });
+  return ((res.json as { data?: { id: string }[] }).data ?? []).map((x) => x.id);
+}
 
 /** Đối soát bài đã hẹn: sau giờ hẹn, hỏi Meta xem bài đã đăng chưa. Quá 1 giờ mà không thấy thì báo người. */
 export async function reconcileScheduled(deps: PublisherDeps): Promise<Result[]> {
@@ -235,15 +275,26 @@ export async function reconcileScheduled(deps: PublisherDeps): Promise<Result[]>
     [new Date(now.getTime() - 2 * 60_000)],
   );
   const out: Result[] = [];
+  const scheduledCache = new Map<string, string[]>();
   for (const row of r.rows) {
     const page = deps.pages[row.market];
     if (!page) continue;
     const overdue = now.getTime() > row.scheduled_at!.getTime() + GRACE_MS;
     let published = false;
     let readError: string | null = null;
+    const isPhoto = (await deps.db.query("SELECT 1 FROM media_asset WHERE content_id = $1 AND revision = $2 AND kind = 'IMAGE'", [row.id, row.current_revision])).rowCount! > 0;
     try {
-      const res = await deps.meta.get(page.token, row.fb_post_id!, { fields: 'id,is_published' });
-      published = (res.json as { is_published?: boolean }).is_published === true;
+      if (isPhoto) {
+        // Meta không trả is_published cho bài ảnh (đã kiểm chứng ở G-1 ảnh). Xác nhận gián tiếp: bài không còn trong
+        // danh sách hẹn giờ của Trang sau giờ hẹn thì coi là đã đăng. Hạn chế: bài bị xóa tay trước giờ cũng biến mất khỏi danh sách.
+        if (!scheduledCache.has(page.id)) scheduledCache.set(page.id, await scheduledIds(deps, page));
+        const ids = scheduledCache.get(page.id)!;
+        const stillScheduled = ids.some((x) => x === row.fb_post_id || x.endsWith(`_${row.fb_post_id}`));
+        published = !stillScheduled && now.getTime() > row.scheduled_at!.getTime() + 10 * 60_000;
+      } else {
+        const res = await deps.meta.get(page.token, row.fb_post_id!, { fields: 'id,is_published' });
+        published = (res.json as { is_published?: boolean }).is_published === true;
+      }
     } catch (e) {
       readError = clip((e as Error).message);
     }

@@ -32,7 +32,7 @@ export function auditView(ctx: Omit<PageCtx, 'title' | 'nav'>, rows: AuditRow[])
   return page(
     { ...ctx, title: 'Nhật ký kiểm toán', nav: 'audit' },
     html`<div class="page">
-      <div class="page-head"><h1>Nhật ký kiểm toán</h1><span class="muted">Chỉ ghi thêm, không sửa hoặc xóa</span></div>
+      <div class="page-head"><div><h1>Nhật ký kiểm toán</h1><div class="sub">Chỉ ghi thêm, không sửa hoặc xóa. Tối đa 1.000 dòng gần nhất khi xuất.</div></div><a class="btn" href="/audit.csv">Tải CSV</a></div>
       ${body}
     </div>`,
   );

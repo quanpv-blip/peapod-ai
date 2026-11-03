@@ -19,6 +19,24 @@ export function scheduleGate(at: Date, now: Date): { ok: true } | { ok: false; r
   };
 }
 
+/**
+ * Phần trăm lượt gọi đã dùng theo header x-business-use-case-usage của Meta (cao nhất trong các chỉ số).
+ * Trả về 0 nếu header thiếu hoặc không đọc được: không chặn đăng khi không biết.
+ */
+export function bucUsagePct(header: string | null): number {
+  if (!header) return 0;
+  try {
+    const j = JSON.parse(header) as Record<string, { call_count?: number; total_cputime?: number; total_time?: number }[]>;
+    let max = 0;
+    for (const entries of Object.values(j)) {
+      for (const e of entries) max = Math.max(max, e.call_count ?? 0, e.total_cputime ?? 0, e.total_time ?? 0);
+    }
+    return Math.round(max);
+  } catch {
+    return 0;
+  }
+}
+
 /** Lỗi 4xx (trừ 408, 429) là lỗi xác định: Meta đã từ chối, không có bài nào được tạo. Còn lại là không rõ kết quả. */
 export function isDefinitiveRejection(status: number): boolean {
   return status >= 400 && status < 500 && status !== 408 && status !== 429;

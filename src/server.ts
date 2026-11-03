@@ -34,7 +34,7 @@ await registerWeb(app, {
   sessionSecret,
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   publisher: Object.keys(pages).length ? { db: pool, meta: createMetaClient(), pages } : undefined,
-  generator: process.env.GEMINI_API_KEY ? { gemini: createGeminiClient(), schema } : undefined,
+  generator: process.env.GEMINI_API_KEY ? { gemini: createGeminiClient(), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: 'gemini-3.6-flash' } : undefined,
 });
 
 // Công khai, không lộ chi tiết (xem docs/10 mục 3).
