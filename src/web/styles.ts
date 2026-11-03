@@ -339,20 +339,47 @@ table.users td{vertical-align:middle}
 .step b{width:24px;height:24px;border-radius:50%;background:var(--sunken);color:var(--ink-2);display:inline-flex;align-items:center;justify-content:center;font-size:12px}
 .step.on{color:var(--ink)}.step.on b{background:var(--brand);color:var(--brand-ink)}
 
-/* đăng nhập */
-/* đăng nhập: một thẻ giữa màn hình, nền nhẹ theo màu thương hiệu */
-.auth{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:72px 20px 28px;position:relative;background:radial-gradient(900px 520px at 12% -12%,var(--brand-soft),transparent 62%),radial-gradient(760px 460px at 105% 112%,var(--brand-soft),transparent 60%),var(--bg)}
-.auth .theme{position:absolute;top:18px;right:18px}
-.auth-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);padding:36px 36px 30px}
-.auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}
-.auth-name{font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
-.auth-name b{color:var(--brand)}
-.auth-tag{font-size:12.5px;color:var(--ink-3);margin-top:2px}
-.auth-card h1{font-size:24px;margin:0 0 6px;letter-spacing:-.02em}
-.auth-card .sub{color:var(--ink-3);margin:0 0 22px;font-size:14px}
-.auth-card .btn.block{width:100%;height:44px;font-size:14.5px;margin-top:6px}
-.auth-help{font-size:12.5px;color:var(--ink-3);margin:20px 0 0;text-align:center}
-.auth-foot{margin-top:28px;font-size:12px;color:var(--ink-4);text-align:center}
+/* đăng nhập: chia đôi. Trái là khối thương hiệu có chuyển động, phải là form. */
+.auth{min-height:100vh;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);background:var(--bg)}
+.auth-art{position:relative;overflow:hidden;color:#fff;padding:44px 52px;display:flex;flex-direction:column;background:linear-gradient(135deg,#1e1b4b 0%,#3730a3 45%,#4f46e5 75%,#7c3aed 100%);background-size:200% 200%;animation:authShift 16s ease-in-out infinite}
+.auth-art .orb{position:absolute;border-radius:50%;filter:blur(40px);opacity:.55;pointer-events:none;animation:authFloat 14s ease-in-out infinite}
+.auth-art .o1{width:360px;height:360px;background:#a5b4fc;top:-120px;right:-100px}
+.auth-art .o2{width:280px;height:280px;background:#c4b5fd;bottom:-90px;left:-70px;animation-delay:-6s}
+.auth-brand-lg{position:relative;display:flex;align-items:center;gap:12px;font-size:18px;font-weight:700;letter-spacing:-.01em}
+.auth-brand-lg b{color:#c7d2fe}
+.auth-copy{position:relative;margin-top:auto;margin-bottom:auto;max-width:520px;padding:32px 0}
+.auth-copy h2{font-size:38px;line-height:1.12;letter-spacing:-.025em;margin:0 0 16px;font-weight:750;color:#fff;animation:authUp .7s ease both}
+.auth-copy > p{font-size:16px;line-height:1.55;color:rgba(255,255,255,.85);margin:0 0 30px;max-width:460px;animation:authUp .7s .1s ease both}
+.auth-points{list-style:none;padding:0;margin:0;display:grid;gap:14px}
+.auth-points li{display:flex;gap:12px;align-items:flex-start;font-size:14.5px;color:rgba(255,255,255,.92);animation:authUp .6s ease both}
+.auth-points li:nth-child(2){animation-delay:.12s}
+.auth-points li:nth-child(3){animation-delay:.24s}
+.auth-points .ck{flex:none;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.16);display:grid;place-items:center;font-size:12px;font-weight:700;color:#a7f3d0}
+.auth-art-foot{position:relative;font-size:12px;color:rgba(255,255,255,.7)}
+.auth-form{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px 28px}
+.auth-form .theme{position:absolute;top:18px;right:18px}
+.auth-card{width:100%;max-width:400px;animation:authUp .6s .05s ease both}
+.auth-card h1{font-size:26px;margin:0 0 8px;letter-spacing:-.02em}
+.auth-card .sub{color:var(--ink-3);margin:0 0 26px;font-size:14.5px}
+.auth-card .field input{transition:border-color .18s,box-shadow .18s}
+.auth-card .field input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-soft)}
+.auth-card .btn.block{width:100%;height:46px;font-size:15px;margin-top:8px;transition:transform .15s,box-shadow .15s}
+.auth-card .btn.block:hover{transform:translateY(-1px);box-shadow:0 10px 24px -8px var(--brand)}
+.auth-help{font-size:12.5px;color:var(--ink-3);margin:22px 0 0;text-align:center}
+.auth-foot{margin-top:auto;padding-top:28px;font-size:12px;color:var(--ink-4);text-align:center}
+@keyframes authUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes authFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(18px,-22px)}}
+@keyframes authShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+@media (prefers-reduced-motion:reduce){.auth *,.auth-art{animation:none!important}}
+@media (max-width:900px){
+  .auth{grid-template-columns:minmax(0,1fr)}
+  .auth-art{padding:22px 24px}
+  .auth-copy,.auth-art-foot{display:none}
+  .auth-art{min-height:0}
+  .auth-form{padding:20px 20px 24px}
+  .auth-form .theme{position:static;align-self:flex-end;margin:0 0 12px}
+  .auth-card h1{font-size:23px}
+}
 
 @media (max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cols{grid-template-columns:1fr}}
 @media (max-width:980px){
