@@ -95,7 +95,7 @@ p{margin:0 0 8px}
 .menu a:hover,.menu button:hover{background:var(--sunken);color:var(--ink);text-decoration:none}
 .menu hr{border:0;border-top:1px solid var(--line);margin:6px 0}
 .banner{background:var(--bad-soft);color:var(--bad);border-bottom:1px solid color-mix(in srgb,var(--bad) 30%,transparent);padding:11px 28px;font-size:13.5px}
-.page{width:100%;max-width:1280px;margin:0 auto;padding:28px 28px 40px;flex:1}
+.page{width:100%;max-width:1800px;margin:0 auto;padding:28px clamp(20px,2.4vw,40px) 40px;flex:1}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
 .page-head .sub{color:var(--ink-3);margin-top:4px;max-width:760px}
 .crumb{font-size:12.5px;color:var(--ink-3);margin-bottom:6px;font-weight:550}
@@ -340,21 +340,19 @@ table.users td{vertical-align:middle}
 .step.on{color:var(--ink)}.step.on b{background:var(--brand);color:var(--brand-ink)}
 
 /* đăng nhập */
-.auth{min-height:100vh;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
-.auth-art{position:relative;overflow:hidden;background:url('/assets/login-bg.svg') center/cover no-repeat;color:#fff;padding:48px;display:flex;flex-direction:column;justify-content:space-between}
-.auth-art::after{content:"";position:absolute;inset:auto -120px -160px auto;width:460px;height:460px;border-radius:50%;background:rgba(255,255,255,.08)}
-.auth-art h2{color:#fff;font-size:30px;line-height:1.2;letter-spacing:-.02em;margin:0 0 14px;max-width:460px}
-.auth-art p{color:rgba(255,255,255,.82);max-width:440px;font-size:15px}
-.auth-art .brand{color:#fff;padding:0}
-.auth-art .brand-t b{color:#fff}
-.auth-art ul{list-style:none;padding:0;margin:28px 0 0;display:grid;gap:10px;color:rgba(255,255,255,.9);font-size:14px}
-.auth-art li::before{content:"✓";display:inline-block;width:20px;color:#a5f3fc;font-weight:700}
-.auth-form{display:flex;align-items:center;justify-content:center;padding:40px 24px;position:relative}
-.auth-form .theme{position:absolute;top:18px;right:18px}
-.login{width:100%;max-width:380px}
-.login h1{font-size:24px;margin-bottom:6px}
-.login .sub{color:var(--ink-3);margin-bottom:26px}
-.login .btn{width:100%;height:42px;font-size:14.5px}
+/* đăng nhập: một thẻ giữa màn hình, nền nhẹ theo màu thương hiệu */
+.auth{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:72px 20px 28px;position:relative;background:radial-gradient(900px 520px at 12% -12%,var(--brand-soft),transparent 62%),radial-gradient(760px 460px at 105% 112%,var(--brand-soft),transparent 60%),var(--bg)}
+.auth .theme{position:absolute;top:18px;right:18px}
+.auth-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);padding:36px 36px 30px}
+.auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+.auth-name{font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+.auth-name b{color:var(--brand)}
+.auth-tag{font-size:12.5px;color:var(--ink-3);margin-top:2px}
+.auth-card h1{font-size:24px;margin:0 0 6px;letter-spacing:-.02em}
+.auth-card .sub{color:var(--ink-3);margin:0 0 22px;font-size:14px}
+.auth-card .btn.block{width:100%;height:44px;font-size:14.5px;margin-top:6px}
+.auth-help{font-size:12.5px;color:var(--ink-3);margin:20px 0 0;text-align:center}
+.auth-foot{margin-top:28px;font-size:12px;color:var(--ink-4);text-align:center}
 
 @media (max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cols{grid-template-columns:1fr}}
 @media (max-width:980px){
@@ -368,7 +366,6 @@ table.users td{vertical-align:middle}
   .topbar{padding:0 16px}
   .page{padding:20px 16px 36px}
   .footer{padding:14px 16px}
-  .auth{grid-template-columns:1fr}.auth-art{display:none}
   .form-grid{grid-template-columns:1fr}
   .split{grid-template-columns:1fr}
   .toolbar input[type=search]{width:100%}
