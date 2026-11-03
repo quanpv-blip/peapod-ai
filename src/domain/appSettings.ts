@@ -18,6 +18,10 @@ export interface AppSettings {
   bucPausePct: number;
   /** Tên miền được phép làm nguồn cho bài chiến dịch (không tự tải trang; người dùng dán nội dung). */
   campaignDomains: string[];
+  /** Tự duyệt bài VN khi đạt điều kiện (xem domain/autoApprove.ts). Mặc định tắt. JP luôn duyệt tay. */
+  autoApproveVN: boolean;
+  /** Số bài tự duyệt tối đa mỗi ngày (theo ngày ICT). */
+  autoApproveDailyMax: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -33,6 +37,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   priceOutPerM: 3.75,
   bucPausePct: 80,
   campaignDomains: ['xtech.nikkei.com', 'itmedia.co.jp', 'vnexpress.net'],
+  autoApproveVN: false,
+  autoApproveDailyMax: 3,
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -82,6 +88,8 @@ export function parseSettings(form: Record<string, unknown>): SettingsCheck {
     priceOutPerM: num('priceOutPerM', 0, 1000, 'Đơn giá ra'),
     bucPausePct: num('bucPausePct', 1, 100, 'Ngưỡng BUC (%)'),
     campaignDomains: lines(form.campaignDomains).map((d) => d.toLowerCase()),
+    autoApproveVN: form.autoApproveVN === 'on' || form.autoApproveVN === '1' || form.autoApproveVN === true,
+    autoApproveDailyMax: num('autoApproveDailyMax', 0, 20, 'Số bài tự duyệt tối đa mỗi ngày'),
   };
   if (value.campaignDomains.length === 0) errors.push('Cần ít nhất một tên miền cho bài chiến dịch');
   if (errors.length) return { ok: false, errors };
@@ -103,6 +111,8 @@ export function settingsToForm(s: AppSettings): Record<string, string> {
     priceOutPerM: String(s.priceOutPerM),
     bucPausePct: String(s.bucPausePct),
     campaignDomains: s.campaignDomains.join('\n'),
+    autoApproveVN: s.autoApproveVN ? 'on' : '',
+    autoApproveDailyMax: String(s.autoApproveDailyMax),
   };
 }
 

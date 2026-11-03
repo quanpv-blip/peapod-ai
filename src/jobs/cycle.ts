@@ -5,6 +5,7 @@ import type { Market } from '../domain/package.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import { getFlag, setFlag, getAppSettings } from '../services/appSettings.ts';
 import { generateNews } from '../services/generate.ts';
+import { autoApproveVN } from '../services/autoApprove.ts';
 import { isPaused } from '../services/settings.ts';
 import { publishApproved, reconcileScheduled, type PublisherDeps } from '../services/publish.ts';
 
@@ -60,6 +61,16 @@ export async function runCycle(deps: CycleDeps): Promise<string[]> {
       log.push(`sinh ${market}: ${made} bài mới${errors ? `, ${errors} lỗi` : ''}`);
       if (made) await deps.notify(`🆕 ${made} bản tin ${market} đang chờ duyệt trong hàng chờ`);
     }
+  }
+
+  // Tự duyệt VN theo điều kiện (tắt mặc định). Bài vừa duyệt sẽ được hẹn lên Trang ở chu kỳ kế tiếp.
+  const auto = await autoApproveVN(deps.db, now);
+  if (auto.length) {
+    const approved = auto.filter((r) => r.outcome === 'approved');
+    const waiting = auto.filter((r) => r.outcome === 'skipped').length;
+    const failed = auto.filter((r) => r.outcome === 'failed').length;
+    log.push(`tự duyệt VN: ${approved.length} duyệt, ${waiting} chờ người, ${failed} lỗi`);
+    for (const r of approved) await deps.notify(`✅ Tự duyệt bài #${r.id} (VN): ${r.headline ?? ''}`);
   }
   return log.length ? log : ['không có việc cần làm'];
 }

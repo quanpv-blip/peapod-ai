@@ -53,7 +53,11 @@ export function settingsPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: SettingsOpt
         ${panel('Giới hạn đăng Meta', 'Khi lượt gọi Meta vượt ngưỡng, hệ thống tạm dừng hẹn bài mới (BUC).', html`
           ${field('bucPausePct', 'Ngưỡng tạm dừng (%)', html`<input id="bucPausePct" name="bucPausePct" type="number" step="1" min="1" max="100" value="${v('bucPausePct')}">`)}
         `)}
-        ${panel('Bài chiến dịch', 'Tên miền được phép làm nguồn cho bài chiến dịch. Hệ thống không tự tải trang; người dùng dán nội dung nguồn.', html`
+        ${panel('Tự động duyệt (chỉ VN)', 'Bật thì bài VN đạt đủ điều kiện được tự duyệt và tự hẹn lên Trang. Điều kiện: nguồn RSS đã cấu hình, không có khẳng định cần kiểm, có ảnh thẻ, không phải tin sự cố bảo mật, và chưa có người sửa. JP luôn duyệt tay.', html`
+          <div class="field full"><label class="check"><input type="checkbox" name="autoApproveVN" value="on"${v('autoApproveVN') === 'on' ? ' checked' : ''}> Bật tự duyệt bài VN</label></div>
+          ${field('autoApproveDailyMax', 'Số bài tự duyệt tối đa mỗi ngày', html`<input id="autoApproveDailyMax" name="autoApproveDailyMax" type="number" step="1" min="0" max="20" value="${v('autoApproveDailyMax')}">`, 'Đặt 0 để tạm tắt mà không cần bỏ tick.')}
+        `)}
+        ${panel('Bài chiến dịch','Tên miền được phép làm nguồn cho bài chiến dịch. Hệ thống không tự tải trang; người dùng dán nội dung nguồn.', html`
           <div class="field full">${html`<label for="campaignDomains">Tên miền được phép</label><textarea id="campaignDomains" name="campaignDomains" rows="3">${v('campaignDomains')}</textarea><div class="hint">Mỗi dòng một tên miền, ví dụ vnexpress.net. Cả tên miền con cũng được phép.</div>`}</div>
         `)}
         <div class="savebar"><button class="btn primary" type="submit">Lưu cấu hình</button></div>
