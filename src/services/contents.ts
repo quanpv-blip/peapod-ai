@@ -185,3 +185,19 @@ export async function listAudit(db: pg.Pool, actor: Actor, limit = 100) {
       WHERE c.market = ANY($1) ORDER BY e.id DESC LIMIT $2`, [markets, limit]);
   return r.rows as { id: number; content_id: number; revision: number; action: string; actor: string; note: string | null; created_at: Date; market: Market }[];
 }
+
+/** Ghi một gói do AI sinh vào hàng chờ (IN_REVIEW, revision 1, không có người sửa). Chỉ dùng từ tiến trình nền. */
+export async function createGenerated(db: pg.Pool, pkg: ContentPackage, model: string): Promise<number> {
+  const engine = pkg.media.engine;
+  const format = engine === 'NONE' ? 'TEXT' : engine === 'REMOTION_CARD' ? 'IMAGE' : 'REEL';
+  const hash = packageHash(pkg);
+  return tx(db, async (c) => {
+    const it = await c.query<{ id: string }>(
+      `INSERT INTO content_item(market, page_key, format, media_engine, state) VALUES ($1,$1,$2,$3,'IN_REVIEW') RETURNING id`,
+      [pkg.market, format, engine],
+    );
+    const id = Number(it.rows[0]!.id);
+    await c.query('INSERT INTO content_revision(content_id, revision, package, package_hash, model) VALUES ($1,1,$2,$3,$4)', [id, JSON.stringify(pkg), hash, model]);
+    return id;
+  });
+}
