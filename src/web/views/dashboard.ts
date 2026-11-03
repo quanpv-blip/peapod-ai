@@ -1,0 +1,76 @@
+import { OVERDUE_HOURS, type Stats } from '../../services/stats.ts';
+import { marketTag, span, STATE, when } from '../components.ts';
+import { empty, html, type Safe } from '../html.ts';
+import { page, type PageCtx } from '../layout.ts';
+import type { AuditRow } from './audit.ts';
+import { ACTION } from '../components.ts';
+
+const TONE_BG: Record<string, string> = { '': 'c-mute-bg', ok: 'c-ok-bg', warn: 'c-warn-bg', bad: 'c-bad-bg', info: 'c-info-bg' };
+const ORDER = ['IN_REVIEW', 'CHANGES_REQUESTED', 'APPROVED', 'SCHEDULED', 'PUBLISHING', 'PUBLISHED', 'GENERATING', 'MEDIA_PENDING', 'REJECTED', 'CANCELLED', 'FAILED_GENERATE', 'FAILED_MEDIA', 'FAILED_PUBLISH'];
+
+const pct = (n: number, of: number) => (of ? Math.round((n / of) * 100) : 0);
+const sum = (o: Record<string, number>, keys?: string[]) => Object.entries(o).filter(([k]) => !keys || keys.includes(k)).reduce((a, [, v]) => a + v, 0);
+
+function kpi(label: string, tone: string, value: string | number, unit: string, sub: Safe | string): Safe {
+  return html`<div class="kpi"><div class="kpi-l"><i class="c-${tone}"></i>${label}</div><div class="kpi-v">${value}<small>${unit}</small></div><div class="kpi-s">${sub}</div></div>`;
+}
+
+export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, recent: AuditRow[], markets: ('VN' | 'JP')[]): string {
+  const total = sum(s.byState);
+  const scheduled = sum(s.byState, ['APPROVED', 'SCHEDULED']);
+  const published = s.byState['PUBLISHED'] ?? 0;
+  const failed = sum(s.byState, ['FAILED_GENERATE', 'FAILED_MEDIA', 'FAILED_PUBLISH']);
+
+  const kpis = html`<div class="kpis">
+    ${kpi('Chờ duyệt', 'warn', s.pending.count, 'bài', s.pending.count
+      ? html`Lâu nhất ${span(s.pending.oldestWaitMs)}${s.pending.overdue ? html` · <span class="up">${s.pending.overdue} bài quá ${OVERDUE_HOURS} giờ</span>` : empty}`
+      : 'Không có bài nào đang chờ')}
+    ${kpi('Đã duyệt, chờ đăng', 'info', scheduled, 'bài', s.upcoming[0] ? html`Bài kế tiếp: ${when(s.upcoming[0].scheduled_at, s.upcoming[0].market)}` : 'Chưa có bài hẹn giờ')}
+    ${kpi('Đã đăng', 'ok', published, 'bài', failed ? html`<span class="up">${failed} bài lỗi cần xử lý</span>` : 'Không có bài lỗi')}
+    ${kpi('Tỷ lệ duyệt (7 ngày)', 'mute', s.approvalRate === null ? '-' : Math.round(s.approvalRate * 100), s.approvalRate === null ? '' : '%', s.decisions7d ? `${s.decisions7d} quyết định (duyệt, từ chối, yêu cầu sửa)` : 'Chưa có quyết định nào')}
+  </div>`;
+
+  const present = ORDER.filter((k) => (s.byState[k] ?? 0) > 0);
+  const stateCard = html`<div class="panel"><div class="panel-h">Phân bố theo trạng thái <span class="muted small">${total} bài</span></div><div class="panel-b">
+    ${total
+      ? html`<div class="stack">${present.map((k) => html`<span class="${TONE_BG[STATE[k]?.tone ?? '']} w${pct(s.byState[k]!, total)}" title="${STATE[k]?.text ?? k}"></span>`)}</div>
+        <div class="legend">${present.map((k) => html`<div><i class="${TONE_BG[STATE[k]?.tone ?? '']}"></i>${STATE[k]?.text ?? k}<b>${s.byState[k]}</b></div>`)}</div>`
+      : html`<div class="empty">Chưa có bài nào.</div>`}
+  </div></div>`;
+
+  const marketCard = html`<div class="panel"><div class="panel-h">Theo thị trường</div><div class="panel-b">
+    <table class="split-t"><thead><tr><th></th>${markets.map((m) => html`<th>${m}</th>`)}</tr></thead><tbody>
+      ${[['Tổng số bài', null], ['Chờ duyệt', ['IN_REVIEW']], ['Đã duyệt / hẹn giờ', ['APPROVED', 'SCHEDULED']], ['Đã đăng', ['PUBLISHED']], ['Từ chối / hủy', ['REJECTED', 'CANCELLED']]].map(
+        ([label, keys]) => html`<tr><td>${label as string}</td>${markets.map((m) => html`<td>${sum(s.byMarket[m], (keys as string[] | null) ?? undefined)}</td>`)}</tr>`,
+      )}
+    </tbody></table>
+  </div></div>`;
+
+  const maxDay = Math.max(1, ...s.daily.map((d) => d.approve + d.other));
+  const chart = html`<div class="panel"><div class="panel-h">Hoạt động 7 ngày qua <span class="muted small">giờ ICT</span></div><div class="panel-b">
+    <div class="bars">${s.daily.map((d) => html`<div class="bar"><div class="bar-n">${d.approve + d.other || ''}</div><div class="bar-col">
+        <span class="c-mute-bg h${pct(d.other, maxDay)}"></span><span class="c-ok-bg h${pct(d.approve, maxDay)}"></span></div><div class="bar-l">${d.label}</div></div>`)}</div>
+    <div class="key"><span><i class="c-ok-bg"></i>Duyệt</span><span><i class="c-mute-bg"></i>Sửa, từ chối, yêu cầu sửa, hủy</span></div>
+  </div></div>`;
+
+  const upcoming = html`<div class="panel"><div class="panel-h">Sắp đăng</div><div class="panel-b">
+    ${s.upcoming.length
+      ? html`<ul class="list">${s.upcoming.map((u) => html`<li><div class="when">${when(u.scheduled_at, u.market)}</div><div class="what"><a href="/contents/${u.id}">${u.headline}</a><span class="muted small">${marketTag(u.market)} #${u.id}</span></div></li>`)}</ul>`
+      : html`<div class="empty">Chưa có bài nào được hẹn giờ.</div>`}
+  </div></div>`;
+
+  const activity = html`<div class="panel"><div class="panel-h">Hoạt động gần đây <a class="small" href="/audit">Xem tất cả</a></div><div class="panel-b">
+    ${recent.length
+      ? html`<ul class="list">${recent.map((r) => html`<li><div class="when">${when(r.created_at, r.market)}</div><div class="what"><span>${ACTION[r.action] ?? r.action} · <a href="/contents/${r.content_id}">#${r.content_id}</a></span><span class="muted small">${r.actor}</span></div></li>`)}</ul>`
+      : html`<div class="empty">Chưa có thao tác nào.</div>`}
+  </div></div>`;
+
+  return page(
+    { ...ctx, title: 'Tổng quan', nav: 'dash' },
+    html`<div class="page">
+      <div class="page-head"><div><h1>Tổng quan</h1><div class="sub">Tình hình duyệt và đăng bài của ${markets.join(' và ')}</div></div><a class="btn primary" href="/queue?state=IN_REVIEW">Mở hàng chờ duyệt</a></div>
+      ${kpis}
+      <div class="cols"><div>${stateCard}${chart}</div><div>${upcoming}${marketCard}${activity}</div></div>
+    </div>`,
+  );
+}

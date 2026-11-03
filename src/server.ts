@@ -1,6 +1,9 @@
 import Fastify from 'fastify';
-import { loadBaseConfig } from './config.ts';
+import fastifyCookie from '@fastify/cookie';
+import fastifyFormbody from '@fastify/formbody';
+import { loadBaseConfig, requireEnv } from './config.ts';
 import { createPool, ping } from './db.ts';
+import { registerWeb } from './web/routes.ts';
 
 const cfg = loadBaseConfig();
 const pool = createPool(cfg.DATABASE_URL);
@@ -12,6 +15,13 @@ const app = Fastify({
     redact: ['req.headers.authorization', 'req.headers.cookie'],
   },
 });
+
+const sessionSecret = requireEnv('AUTH_SESSION_SECRET');
+if (sessionSecret.length < 32) throw new Error('AUTH_SESSION_SECRET phải dài ít nhất 32 ký tự');
+
+await app.register(fastifyCookie);
+await app.register(fastifyFormbody);
+await registerWeb(app, { db: pool, sessionSecret, cookieSecure: process.env.COOKIE_SECURE === 'true' });
 
 // Công khai, không lộ chi tiết (xem docs/10 mục 3).
 app.get('/healthz', async (_req, reply) => {
