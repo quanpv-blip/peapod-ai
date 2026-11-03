@@ -27,6 +27,8 @@ import { accountPage } from './views/account.ts';
 import { page, type Flash } from './layout.ts';
 import { html as h } from './html.ts';
 import { CSS } from './styles.ts';
+import { THEME_JS } from './theme.ts';
+import { LOGO_SVG, LOGIN_BG_SVG, SIDE_BG_SVG } from './assets.ts';
 import { auditView } from './views/audit.ts';
 import { dashboardView } from './views/dashboard.ts';
 import { scheduleView } from './views/schedule.ts';
@@ -86,12 +88,16 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'same-origin');
-    reply.header('Content-Security-Policy', "default-src 'none'; style-src 'self'; img-src 'self' data: https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+    reply.header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
     if (!reply.hasHeader('Cache-Control')) reply.header('Cache-Control', 'no-store');
     return payload;
   });
 
   app.get('/assets/app.css', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('text/css; charset=utf-8').send(CSS));
+  app.get('/assets/logo.svg', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/svg+xml; charset=utf-8').send(LOGO_SVG));
+  app.get('/assets/login-bg.svg', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/svg+xml; charset=utf-8').send(LOGIN_BG_SVG));
+  app.get('/assets/side-bg.svg', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/svg+xml; charset=utf-8').send(SIDE_BG_SVG));
+  app.get('/assets/theme.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(THEME_JS));
 
   interface Session { actor: Actor; sid: string; csrf: string; pending: number; paused: boolean }
 
