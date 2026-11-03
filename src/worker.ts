@@ -6,6 +6,7 @@ import { runCycle, type CycleDeps } from './jobs/cycle.ts';
 import { notifySlack } from './providers/slack.ts';
 import { createGeminiClient } from './providers/gemini.ts';
 import { modelChainFromEnv, withFallback } from './providers/aiChain.ts';
+import { markAiExhausted } from './services/quota.ts';
 import { createMetaClient } from './providers/meta.ts';
 import { pagesFromEnv } from './services/publish.ts';
 import { fetchFeeds } from './services/generate.ts';
@@ -30,7 +31,7 @@ const deps: CycleDeps = {
     ? { db: pool, meta: createMetaClient(), pages, bucPausePct: Number(process.env.META_BUC_PAUSE_THRESHOLD ?? 80), bucPauseMinutes: Number(process.env.META_BUC_PAUSE_MINUTES ?? 30) }
     : undefined,
   generator: process.env.GEMINI_API_KEY
-    ? { gemini: withFallback(createGeminiClient(), modelChainFromEnv()), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: modelChainFromEnv()[0] ?? 'gemini-3.5-flash' }
+    ? { gemini: withFallback(createGeminiClient(), modelChainFromEnv(), { onExhausted: (m) => markAiExhausted(pool, m) }), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: modelChainFromEnv()[0] ?? 'gemini-3.5-flash' }
     : undefined,
   notify: (text) => notifySlack(text),
   fetchFeeds: (feeds) => fetchFeeds(feeds),

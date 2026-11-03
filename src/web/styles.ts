@@ -198,6 +198,27 @@ label{display:block;font-weight:600;font-size:13px;margin:0 0 6px;color:var(--in
 .field{margin-bottom:16px;min-width:0}
 .field.full,.form-grid .field.full,.form-grid .savebar,.savebar{grid-column:1/-1}
 .hint{font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.tag.bad-tag{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,transparent);background:var(--bad-soft);margin-left:6px}
+.verdicts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;border-left:4px solid var(--ink-4)}
+.verdict.ok{border-left-color:var(--ok)}
+.verdict.bad{border-left-color:var(--bad)}
+.verdict-h{display:flex;align-items:center;gap:8px}
+.verdict-dot{width:8px;height:8px;border-radius:50%;background:var(--ink-4)}
+.verdict.ok .verdict-dot{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.verdict.bad .verdict-dot{background:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.verdict-v{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:8px 0 4px}
+.meter{height:8px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden;margin:6px 0 8px;min-width:120px}
+.meter span{display:block;height:100%;border-radius:99px;transition:width .3s}
+.day{margin-bottom:26px}
+.day-h{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.day-h h2{font-size:15px;font-weight:650;margin:0;text-transform:capitalize}
+.slot{display:grid;grid-template-columns:110px minmax(0,1fr) 170px;gap:16px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:8px}
+.slot .t{font-weight:650;font-variant-numeric:tabular-nums;font-size:14px}
+.slot .h{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot .h a{color:var(--ink);font-weight:550}
+.slot .h a:hover{color:var(--brand)}
+@media (max-width:760px){.verdicts{grid-template-columns:1fr}.slot{grid-template-columns:1fr;gap:6px}.slot .h{white-space:normal}}
 input[type=text],input[type=email],input[type=password],input[type=datetime-local],input[type=number],input[type=time],input[type=url],input[type=search],textarea,select{width:100%;height:38px;padding:0 12px;border:1px solid var(--line-2);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;transition:border-color .15s,box-shadow .15s;appearance:auto}
 textarea{height:auto;padding:10px 12px;min-height:96px;resize:vertical;line-height:1.6}
 textarea.tall{min-height:260px}

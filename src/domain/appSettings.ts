@@ -24,6 +24,12 @@ export interface AppSettings {
   autoApproveVN: boolean;
   /** Số bài tự duyệt tối đa mỗi ngày (theo ngày ICT). */
   autoApproveDailyMax: number;
+  /** Giới hạn yêu cầu AI mỗi ngày cho MỖI mô hình (gói miễn phí của Gemini: 20). Đối chiếu AI Studio. */
+  aiRequestLimit: number;
+  /** Số dư credit Gemini nhập tay (USD). 0 = chưa nhập. Trừ dần theo chi phí ghi nhận từ ngày nhập. */
+  aiCreditUsd: number;
+  /** Ngày nhập số dư (YYYY-MM-DD, giờ ICT). Trống nếu chưa nhập. */
+  aiCreditAsOf: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -42,6 +48,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   campaignDomains: ['xtech.nikkei.com', 'itmedia.co.jp', 'vnexpress.net'],
   autoApproveVN: false,
   autoApproveDailyMax: 3,
+  aiRequestLimit: 20,
+  aiCreditUsd: 0,
+  aiCreditAsOf: '',
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -94,6 +103,9 @@ export function parseSettings(form: Record<string, unknown>): SettingsCheck {
     campaignDomains: lines(form.campaignDomains).map((d) => d.toLowerCase()),
     autoApproveVN: form.autoApproveVN === 'on' || form.autoApproveVN === '1' || form.autoApproveVN === true,
     autoApproveDailyMax: num('autoApproveDailyMax', 0, 20, 'Số bài tự duyệt tối đa mỗi ngày'),
+    aiRequestLimit: num('aiRequestLimit', 1, 100000, 'Giới hạn yêu cầu AI mỗi ngày'),
+    aiCreditUsd: num('aiCreditUsd', 0, 1000000, 'Số dư credit (USD)'),
+    aiCreditAsOf: /^\d{4}-\d{2}-\d{2}$/.test(String(form.aiCreditAsOf ?? '')) ? String(form.aiCreditAsOf) : '',
   };
   if (value.campaignDomains.length === 0) errors.push('Cần ít nhất một tên miền cho bài chiến dịch');
   if (errors.length) return { ok: false, errors };
@@ -119,6 +131,9 @@ export function settingsToForm(s: AppSettings): Record<string, string> {
     campaignDomains: s.campaignDomains.join('\n'),
     autoApproveVN: s.autoApproveVN ? 'on' : '',
     autoApproveDailyMax: String(s.autoApproveDailyMax),
+    aiRequestLimit: String(s.aiRequestLimit),
+    aiCreditUsd: String(s.aiCreditUsd),
+    aiCreditAsOf: s.aiCreditAsOf,
   };
 }
 

@@ -20,7 +20,12 @@ export function classifyAiError(e: unknown): string {
 }
 
 /** Bọc một GeminiClient bằng chuỗi mô hình. `args.model` bị bỏ qua: chuỗi quyết định mô hình nào được dùng. */
-export function withFallback(inner: GeminiClient, models: string[]): GeminiClient {
+export interface FallbackHooks {
+  /** Gọi khi một mô hình báo hết hạn mức (429): dùng để ghi nhận hạn mức trong ngày. */
+  onExhausted?: (model: string) => Promise<void> | void;
+}
+
+export function withFallback(inner: GeminiClient, models: string[], hooks: FallbackHooks = {}): GeminiClient {
   const chain = [...new Set(models.map((m) => m.trim()).filter(Boolean))];
   if (chain.length === 0) throw new Error('Chuỗi mô hình Gemini rỗng');
   return {
@@ -30,7 +35,9 @@ export function withFallback(inner: GeminiClient, models: string[]): GeminiClien
         try {
           return await inner.generateJson({ ...args, model });
         } catch (e) {
-          reasons.push(`${model}: ${classifyAiError(e)}`);
+          const label = classifyAiError(e);
+          if (label === 'hết hạn mức trong ngày') await hooks.onExhausted?.(model);
+          reasons.push(`${model}: ${label}`);
         }
       }
       throw new AiUnavailableError(reasons);

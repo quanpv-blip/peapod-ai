@@ -21,6 +21,8 @@ import { settingsPage } from './views/settings.ts';
 import { costsPage } from './views/costs.ts';
 import { campaignPage } from './views/campaign.ts';
 import { createPage } from './views/create.ts';
+import { quotaPage } from './views/quota.ts';
+import { quotaReport } from '../services/quota.ts';
 import { recentItems } from '../services/sources.ts';
 import { suggestTopics } from '../services/topics.ts';
 import { accountPage } from './views/account.ts';
@@ -517,6 +519,12 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
       .header('Content-Disposition', 'attachment; filename="nhat-ky-kiem-toan.csv"')
       .type('text/csv; charset=utf-8')
       .send(`﻿${[head.join(','), ...body].join('\r\n')}\r\n`);
+  }));
+
+  // --- hạn mức, credit và giới hạn đăng ---
+  app.get('/quota', guarded(async (s, _req, reply) => {
+    const report = await quotaReport(o.db, await getAppSettings(o.db), { metaConfigured: !!o.publisher });
+    return html(reply, quotaPage(ctxOf(s), report));
   }));
 
   // --- kiểm toán ---

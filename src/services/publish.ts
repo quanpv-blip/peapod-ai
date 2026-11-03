@@ -212,6 +212,8 @@ async function bucPaused(db: pg.Pool, now: Date): Promise<boolean> {
 }
 
 export const BUC_UNTIL_KEY = 'buc_pause_until';
+/** Lượt gọi Meta gần nhất (phần trăm BUC và thời điểm), để trang Hạn mức hiển thị. */
+export const META_USAGE_KEY = 'meta_usage';
 
 export async function publishOne(deps: PublisherDeps, id: number, dryRun = false): Promise<Result> {
   if (!dryRun && (await isPaused(deps.db))) return { id, outcome: 'skipped', detail: 'Công tắc tạm dừng đang bật' };
@@ -240,6 +242,7 @@ export async function publishOne(deps: PublisherDeps, id: number, dryRun = false
     return recordFailure(deps, row, attemptId, hash, e);
   }
   const bucPct = bucUsagePct(headers?.get('x-business-use-case-usage') ?? null);
+  await setFlag(deps.db, META_USAGE_KEY, JSON.stringify({ pct: bucPct, at: now.toISOString() }), 'system:buc');
   if (bucPct >= (deps.bucPausePct ?? 80)) {
     const minutes = deps.bucPauseMinutes ?? 30;
     await setFlag(deps.db, BUC_UNTIL_KEY, String(now.getTime() + minutes * 60_000), 'system:buc');

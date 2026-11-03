@@ -52,6 +52,11 @@ export function settingsPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: SettingsOpt
           ${field('priceInPerM', 'Đơn giá token vào (USD / 1 triệu)', html`<input id="priceInPerM" name="priceInPerM" type="number" step="0.0001" min="0" value="${v('priceInPerM')}">`, 'Số cấu hình để ước tính. Đối chiếu trang giá chính thức của nhà cung cấp trước khi tin.')}
           ${field('priceOutPerM', 'Đơn giá token ra (USD / 1 triệu)', html`<input id="priceOutPerM" name="priceOutPerM" type="number" step="0.0001" min="0" value="${v('priceOutPerM')}">`, 'Token suy luận được tính như token ra.')}
         `)}
+        ${panel('Hạn mức AI', 'Giới hạn yêu cầu mỗi ngày cho từng mô hình (gói miễn phí Gemini: 20, đối chiếu AI Studio) và số dư credit nhập tay để hệ thống ước tính.', html`
+          ${field('aiRequestLimit', 'Giới hạn yêu cầu AI mỗi ngày (mỗi mô hình)', html`<input id="aiRequestLimit" name="aiRequestLimit" type="number" step="1" min="1" value="${v('aiRequestLimit')}">`)}
+          ${field('aiCreditUsd', 'Số dư credit Gemini (USD)', html`<input id="aiCreditUsd" name="aiCreditUsd" type="number" step="0.01" min="0" value="${v('aiCreditUsd')}">`, 'Nhập từ Google Cloud Billing hoặc AI Studio. Đặt 0 nếu không dùng credit trả trước.')}
+          ${field('aiCreditAsOf', 'Ngày nhập số dư', html`<input id="aiCreditAsOf" name="aiCreditAsOf" type="date" value="${v('aiCreditAsOf')}">`, 'Hệ thống chỉ trừ chi phí phát sinh từ ngày này.')}
+        `)}
         ${panel('Giới hạn đăng Meta', 'Khi lượt gọi Meta vượt ngưỡng, hệ thống tạm dừng hẹn bài mới (BUC).', html`
           ${field('bucPausePct', 'Ngưỡng tạm dừng (%)', html`<input id="bucPausePct" name="bucPausePct" type="number" step="1" min="1" max="100" value="${v('bucPausePct')}">`)}
         `)}
