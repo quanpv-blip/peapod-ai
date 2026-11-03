@@ -3,7 +3,7 @@ import { PgBoss } from 'pg-boss';
 import { loadBaseConfig } from './config.ts';
 import { createPool } from './db.ts';
 import { runCycle, type CycleDeps } from './jobs/cycle.ts';
-import { notifySlack } from './providers/slack.ts';
+import { notifyAll } from './services/alerts.ts';
 import { createGeminiClient } from './providers/gemini.ts';
 import { modelChainFromEnv, withFallback } from './providers/aiChain.ts';
 import { markAiExhausted } from './services/quota.ts';
@@ -31,9 +31,19 @@ const deps: CycleDeps = {
     ? { db: pool, meta: createMetaClient(), pages, bucPausePct: Number(process.env.META_BUC_PAUSE_THRESHOLD ?? 80), bucPauseMinutes: Number(process.env.META_BUC_PAUSE_MINUTES ?? 30) }
     : undefined,
   generator: process.env.GEMINI_API_KEY
-    ? { gemini: withFallback(createGeminiClient(), modelChainFromEnv(), { onExhausted: (m) => markAiExhausted(pool, m) }), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: modelChainFromEnv()[0] ?? 'gemini-3.5-flash' }
+    ? {
+        gemini: withFallback(createGeminiClient(), modelChainFromEnv(), {
+          // Chỉ báo một lần mỗi ngày cho mỗi mô hình (markAiExhausted trả về true ở lần đầu trong ngày).
+          onExhausted: async (m) => {
+            if (await markAiExhausted(pool, m)) await notifyAll(`⚠️ Mô hình ${m} đã hết hạn mức hôm nay. Hệ thống chuyển sang mô hình dự phòng nếu còn.`);
+          },
+        }),
+        schema,
+        mediaDir: process.env.MEDIA_DIR ?? './media',
+        model: modelChainFromEnv()[0] ?? 'gemini-3.5-flash',
+      }
     : undefined,
-  notify: (text) => notifySlack(text),
+  notify: (text) => notifyAll(text),
   fetchFeeds: (feeds) => fetchFeeds(feeds),
 };
 

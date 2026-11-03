@@ -36,7 +36,7 @@ await registerWeb(app, {
   sessionSecret,
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   publisher: Object.keys(pages).length ? { db: pool, meta: createMetaClient(), pages } : undefined,
-  generator: process.env.GEMINI_API_KEY ? { gemini: withFallback(createGeminiClient(), modelChainFromEnv(), { onExhausted: (m) => markAiExhausted(pool, m) }), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: modelChainFromEnv()[0] ?? 'gemini-3.5-flash' } : undefined,
+  generator: process.env.GEMINI_API_KEY ? { gemini: withFallback(createGeminiClient(), modelChainFromEnv(), { onExhausted: async (m) => { await markAiExhausted(pool, m); } }), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: modelChainFromEnv()[0] ?? 'gemini-3.5-flash' } : undefined,
 });
 
 // Công khai, không lộ chi tiết (xem docs/10 mục 3).

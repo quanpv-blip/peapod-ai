@@ -16,7 +16,7 @@ import { costSummary } from '../services/costs.ts';
 import { changeOwnPassword } from '../services/account.ts';
 import { diffPackages } from '../domain/diff.ts';
 import { pageInfo, PAGE_SIZE } from '../domain/paging.ts';
-import { notifySlack } from '../providers/slack.ts';
+import { notifyAll } from '../services/alerts.ts';
 import { readFile } from 'node:fs/promises';
 import { settingsPage } from './views/settings.ts';
 import { costsPage } from './views/costs.ts';
@@ -61,6 +61,8 @@ const OK_MESSAGES: Record<string, string> = {
   published: 'Đã hẹn bài lên Trang Facebook.',
   paused: 'Đã BẬT công tắc tạm dừng: không hẹn bài mới và không sinh bài mới.',
   resumed: 'Đã TẮT công tắc tạm dừng. Hệ thống hoạt động bình thường.',
+  'alert-sent': 'Đã gửi tin thử tới kênh cảnh báo. Kiểm tra nhóm Telegram hoặc kênh Slack.',
+  'alert-none': 'Chưa có kênh cảnh báo nào được cấu hình. Đặt TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID hoặc SLACK_WEBHOOK_URL trong file .env.',
 };
 
 // Giới hạn thử đăng nhập: 5 lần sai / 15 phút cho mỗi (IP + email). Bộ nhớ trong đủ cho một tiến trình duy nhất.
@@ -348,8 +350,14 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     const pause = str(b.action) === 'pause';
     if (pause && b.confirm !== '1') return html(reply, dashboardView(ctxOf(s), await getStats(o.db, s.actor), await svc.listAudit(o.db, s.actor, 6), visibleMarkets(s.actor), { metaOn: !!o.publisher, geminiOn: !!o.generator, paused: s.paused, isAdmin: true, flash: { kind: 'warn', text: 'Hãy tick xác nhận trước khi bật công tắc tạm dừng.' } }), 422);
     await setPaused(o.db, pause, s.actor.email);
-    void notifySlack(pause ? `⏸️ ${s.actor.name} đã BẬT công tắc tạm dừng PeaPod` : `▶️ ${s.actor.name} đã TẮT công tắc tạm dừng PeaPod`);
+    void notifyAll(pause ? `⏸️ ${s.actor.name} đã BẬT công tắc tạm dừng PeaPod` : `▶️ ${s.actor.name} đã TẮT công tắc tạm dừng PeaPod`);
     return reply.redirect(`/?ok=${pause ? 'paused' : 'resumed'}`);
+  }));
+
+  // Gửi một tin thử tới mọi kênh cảnh báo đã cấu hình, để kiểm tra Slack/Telegram sau khi đặt biến môi trường.
+  app.post('/admin/alert-test', adminOnly(async (s, _req, reply) => {
+    const r = await notifyAll(`🔔 Kiểm thử cảnh báo PeaPod, gửi bởi ${s.actor.name}. Có thể bỏ qua.`);
+    return reply.redirect(`/?ok=${r.slack || r.telegram ? 'alert-sent' : 'alert-none'}`);
   }));
 
   // --- quản lý người dùng (quản trị viên) ---

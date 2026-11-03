@@ -41,6 +41,9 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
                 <label class="check"><input type="checkbox" name="confirm" value="1" required> Tôi hiểu: bật công tắc sẽ dừng hẹn bài mới lên Trang và sinh bài mới. Hủy bài và đối soát vẫn chạy.</label>
                 <button class="btn danger" type="submit">Bật công tắc tạm dừng</button></form>`
           : empty}
+        ${sys.isAdmin
+          ? html`<form method="post" action="/admin/alert-test" class="actions" style="margin-top:12px">${hidden}<button class="btn" type="submit">Gửi thử cảnh báo</button><span class="small muted">Gửi một tin thử tới các kênh đã cấu hình (Slack, Telegram).</span></form>`
+          : empty}
       </div></div>`
     : empty;
   const total = sum(s.byState);

@@ -8,9 +8,15 @@ import { BUC_UNTIL_KEY, META_USAGE_KEY } from './publish.ts';
 
 export const AI_HIT_PREFIX = 'ai_hit:';
 
-/** Ghi nhận một lần mô hình báo hết hạn mức (dùng cho chuỗi dự phòng). */
-export async function markAiExhausted(db: pg.Pool, model: string, now = new Date()): Promise<void> {
+/**
+ * Ghi nhận một lần mô hình báo hết hạn mức (dùng cho chuỗi dự phòng).
+ * Trả về true nếu đây là lần đầu trong chu kỳ hạn mức hôm nay (để chỉ cảnh báo một lần mỗi ngày).
+ */
+export async function markAiExhausted(db: pg.Pool, model: string, now = new Date()): Promise<boolean> {
+  const prev = await getFlag(db, AI_HIT_PREFIX + model);
+  const firstToday = !prev || new Date(prev).getTime() < pacificDayStart(now).getTime();
   await setFlag(db, AI_HIT_PREFIX + model, now.toISOString(), 'system:ai');
+  return firstToday;
 }
 
 /** Mốc bắt đầu chu kỳ hạn mức Gemini hiện tại: nửa đêm giờ Thái Bình Dương gần nhất. */
