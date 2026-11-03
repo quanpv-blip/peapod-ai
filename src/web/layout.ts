@@ -1,4 +1,9 @@
+import { createHash } from 'node:crypto';
 import { empty, esc, html, raw, type Safe } from './html.ts';
+import { CSS } from './styles.ts';
+
+// Mã băm nội dung CSS: đổi CSS thì đường dẫn đổi theo, trình duyệt không dùng bản cũ đang cache.
+export const CSS_VERSION = createHash('sha256').update(CSS).digest('hex').slice(0, 10);
 
 export interface Flash {
   kind: 'ok' | 'err' | 'warn';
@@ -112,7 +117,7 @@ export function page(ctx: PageCtx, body: Safe): string {
 
   return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>${esc(ctx.title)} · PeaPod AI</title>
-<link rel="icon" type="image/svg+xml" href="/assets/logo.svg"><link rel="stylesheet" href="/assets/app.css"><script src="/assets/theme.js"></script></head>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg"><link rel="stylesheet" href="/assets/app.css?v=${CSS_VERSION}"><script src="/assets/theme.js"></script></head>
 <body>${shell.html}</body></html>`;
 }
 
