@@ -16,6 +16,7 @@ Epic E0 (hạ tầng và nền) xong. E1 (PoC): **đường miễn phí bằng G
 | `poc/gemini-probe.ts`, `poc/e2e-free.ts` (Gemini, đường miễn phí) | **Đã chạy thật** 2026-11-02: JP và VN đạt schema, 0 URL bịa, đúng ngôn ngữ; TTS ra WAV có tiếng. Chất lượng nội dung chưa đánh giá (G-3) |
 | Script PoC `poc/g1-meta-check.ts`, `g2-research.ts`, `g4-tts.ts` (Meta, xAI) | Chỉ kiểm kiểu; **chưa chạy** |
 | Bộ chuyển đổi Gemini, đọc RSS, đọc WAV, ước lượng timestamp phụ đề | 64 test đơn vị; chạy thật qua `e2e-free.ts` |
+| Giao diện duyệt (đăng nhập, hàng chờ, chi tiết, sửa, duyệt, từ chối, kiểm toán) | Chạy thật trên Docker, duyệt thử qua HTTP; 24 test mới (12 test tích hợp cần `TEST_DATABASE_URL`) |
 | CI GitLab: typecheck, test, build, quét bí mật | Chưa chạy trên GitLab |
 
 ## Chạy local
@@ -49,6 +50,16 @@ npx tsx poc/gemini-probe.ts                     # thăm dò hình dạng phản 
 npx tsx poc/e2e-free.ts --market JP --tts       # RSS -> sinh bài -> kiểm tra -> TTS -> phụ đề (JP hoặc VN)
 ```
 
+## Giao diện duyệt (local)
+
+Đặt `AUTH_SESSION_SECRET` (>= 32 ký tự) trong `.env`, chạy `docker compose up -d --build`, rồi nạp dữ liệu mẫu (tài khoản demo + các bài PoC; mật khẩu in ra một lần):
+
+```bash
+DATABASE_URL=postgres://app:<mật khẩu>@127.0.0.1:5433/peapod npx tsx src/seed.ts
+```
+
+Mở http://127.0.0.1:3000 . Test tích hợp: `TEST_DATABASE_URL=<như trên> npm test`. Khi chạy sau HTTPS đặt `COOKIE_SECURE=true`.
+
 ## Chạy PoC Meta/xAI (cần khóa thật, dùng Page thử)
 
 Điền `.env` rồi, ví dụ:
@@ -70,7 +81,9 @@ Bằng chứng ghi vào `poc/out/` (gitignore). Chép kết luận vào `ba-team
 ```
 src/config.ts, db.ts, migrate.ts, server.ts, worker.ts
 src/domain/      logic thuần, có test (không I/O)
-src/providers/   xAI, Meta (I/O ra ngoài)
+src/providers/   xAI, Gemini, Meta (I/O ra ngoài)
+src/services/    nghiệp vụ duyệt bài (transaction, phân quyền, kiểm toán)
+src/web/         giao diện render phía máy chủ (routes, views, styles)
 db/migrations/   SQL theo số thứ tự
 schemas/         content_package.schema.json (bản sao của ba-team/specs; giữ đồng bộ)
 poc/             script kiểm chứng giai đoạn 0
