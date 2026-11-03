@@ -17,10 +17,14 @@ export interface QueueView {
   info: Map<string, RowInfo>;
   /** Số bài theo trạng thái trong phạm vi quyền của người dùng (hiện trên các tab lọc). */
   counts: Record<string, number>;
-  filter: { state: string; market: string };
+  filter: { state: string; market: string; q: string };
   markets: string[];
   now: Date;
   flash?: Flash;
+  /** Có cấu hình khóa Gemini và người dùng duyệt được ít nhất một thị trường: hiện nút tạo bản tin. */
+  canGenerate: boolean;
+  /** Có cấu hình Trang Meta và là người duyệt: hiện nút hẹn các bài đã duyệt. */
+  canPublish: boolean;
 }
 
 const STATE_FILTERS: [string, string][] = [
@@ -29,22 +33,44 @@ const STATE_FILTERS: [string, string][] = [
   ['CHANGES_REQUESTED', 'Cần chỉnh sửa'],
   ['APPROVED', 'Đã duyệt'],
   ['SCHEDULED', 'Đã hẹn giờ'],
+  ['PUBLISHED', 'Đã đăng'],
   ['REJECTED', 'Đã từ chối'],
+  ['CANCELLED', 'Đã hủy'],
+  ['FAILED_PUBLISH', 'Lỗi đăng'],
 ];
 
-function link(state: string, market: string): string {
-  const q = new URLSearchParams();
-  if (state) q.set('state', state);
-  if (market) q.set('market', market);
-  const s = q.toString();
+function link(state: string, market: string, q = ''): string {
+  const p = new URLSearchParams();
+  if (state) p.set('state', state);
+  if (market) p.set('market', market);
+  if (q) p.set('q', q);
+  const s = p.toString();
   return s ? `/queue?${s}` : '/queue';
 }
 
 export function queueView(v: QueueView): string {
   const total = Object.values(v.counts).reduce((a, b) => a + b, 0);
-  const tabs = STATE_FILTERS.map(([k, label]) => html`<a href="${link(k, v.filter.market)}" class="${v.filter.state === k ? 'on' : ''}">${label} <span class="n">${k ? (v.counts[k] ?? 0) : total}</span></a>`);
+  const tabs = STATE_FILTERS.map(([k, label]) => html`<a href="${link(k, v.filter.market, v.filter.q)}" class="${v.filter.state === k ? 'on' : ''}">${label} <span class="n">${k ? (v.counts[k] ?? 0) : total}</span></a>`);
   const marketOpts: [string, string][] = [['', 'Cả hai'], ...v.markets.map((m): [string, string] => [m, m])];
-  const markets = v.markets.length > 1 ? html`<div class="seg">${marketOpts.map(([k, label]) => html`<a href="${link(v.filter.state, k)}" class="${v.filter.market === k ? 'on' : ''}">${label}</a>`)}</div>` : empty;
+  const markets = v.markets.length > 1 ? html`<div class="seg">${marketOpts.map(([k, label]) => html`<a href="${link(v.filter.state, k, v.filter.q)}" class="${v.filter.market === k ? 'on' : ''}">${label}</a>`)}</div>` : empty;
+  const hidden = html`<input type="hidden" name="_csrf" value="${v.ctx.csrf}">`;
+
+  const search = html`<form method="get" action="/queue" role="search">
+    <input type="hidden" name="state" value="${v.filter.state}"><input type="hidden" name="market" value="${v.filter.market}">
+    <input type="search" name="q" value="${v.filter.q}" placeholder="Tìm theo tiêu đề" aria-label="Tìm theo tiêu đề">
+    <button class="btn" type="submit">Tìm</button>${v.filter.q ? html`<a class="small" href="${link(v.filter.state, v.filter.market)}">Xóa tìm kiếm</a>` : empty}
+  </form>`;
+
+  const generate = v.canGenerate
+    ? html`<form method="post" action="/queue/generate">${hidden}
+        <select name="market" aria-label="Thị trường">${v.markets.map((m) => html`<option value="${m}">${m}</option>`)}</select>
+        <select name="limit" aria-label="Số bài">${[1, 2, 3].map((n) => html`<option value="${n}">${n} bài</option>`)}</select>
+        <button class="btn" type="submit">Tạo bản tin mới</button>
+      </form>`
+    : empty;
+  const publish = v.canPublish
+    ? html`<form method="post" action="/queue/publish-approved">${hidden}<button class="btn primary" type="submit">Hẹn các bài đã duyệt lên Trang</button></form>`
+    : empty;
 
   const waitCell = (r: ContentRow): Safe => {
     if (r.state !== 'IN_REVIEW') return html`<span class="muted">-</span>`;
@@ -76,6 +102,7 @@ export function queueView(v: QueueView): string {
     html`<div class="page">
       <div class="page-head"><div><h1>Hàng chờ duyệt</h1><div class="sub">Xem, chỉnh sửa và duyệt nội dung trước khi đăng</div></div><span class="muted">${v.rows.length} bài hiển thị</span></div>
       ${flashBox(v.flash)}
+      <div class="toolbar">${search}<span class="sep"></span>${generate}${publish}</div>
       <div class="filters"><div class="seg">${tabs}</div>${markets}</div>
       ${body}
     </div>`,

@@ -43,13 +43,19 @@ export interface ServiceOptions {
 
 const DEFAULTS: ServiceOptions = { fourEyesMarkets: ['JP'] };
 
-export async function listContents(db: pg.Pool, actor: Actor, filter: { state?: string; market?: string } = {}): Promise<ContentRow[]> {
+export async function listContents(db: pg.Pool, actor: Actor, filter: { state?: string; market?: string; q?: string } = {}): Promise<ContentRow[]> {
   const markets = visibleMarkets(actor);
   if (markets.length === 0) return [];
   const params: unknown[] = [markets];
   let where = 'market = ANY($1)';
   if (filter.state) { params.push(filter.state); where += ` AND state = $${params.length}`; }
   if (filter.market && markets.includes(filter.market as Market)) { params.push(filter.market); where += ` AND market = $${params.length}`; }
+  // Tìm theo tiêu đề của bản hiện tại (ILIKE, ký tự đặc biệt của LIKE được escape).
+  const q = filter.q?.trim();
+  if (q) {
+    params.push(`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    where += ` AND id IN (SELECT r.content_id FROM content_revision r JOIN content_item i ON i.id = r.content_id AND i.current_revision = r.revision WHERE r.package->'post'->>'headline' ILIKE $${params.length})`;
+  }
   const r = await db.query<ContentRow>(`SELECT * FROM content_item WHERE ${where} ORDER BY (state='IN_REVIEW') DESC, updated_at DESC LIMIT 200`, params);
   return r.rows;
 }

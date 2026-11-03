@@ -15,6 +15,10 @@ export interface DetailView {
   scheduleDefault: string;
   draft?: { headline: string; body: string; call_to_action: string; hashtags: string };
   flash?: Flash;
+  /** Có cấu hình Trang Meta và bài đang APPROVED: hiện nút hẹn lên Trang ngay. */
+  canPublish: boolean;
+  /** Liên kết tới bài trên Facebook khi đã có ID bài. */
+  fbUrl?: string;
 }
 
 // Bài đã hẹn giờ trên Meta không sửa được: phải hủy hẹn giờ trước (xem services/publish.ts).
@@ -85,7 +89,15 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
       </div></div>`
     : empty;
 
-  const cancelable = v.can.cancel && ['IN_REVIEW', 'CHANGES_REQUESTED', 'APPROVED', 'SCHEDULED'].includes(it.state);
+  const publishBox = v.canPublish
+    ? html`<div class="panel"><div class="panel-h">Đăng lên Trang</div><div class="panel-b">
+        <p class="small muted">Hẹn bài này lên Trang ngay theo giờ đã duyệt. Bài sẽ được Meta tự đăng đúng giờ.</p>
+        <form method="post" action="/contents/${it.id}/publish">${hidden}
+          <button class="btn primary" type="submit">Hẹn lên Trang ngay</button>
+        </form></div></div>`
+    : empty;
+
+  const cancelable =v.can.cancel && ['IN_REVIEW', 'CHANGES_REQUESTED', 'APPROVED', 'SCHEDULED'].includes(it.state);
   const cancelBox = cancelable
     ? html`<div class="panel"><div class="panel-h">Hủy bài</div><div class="panel-b">
         <form method="post" action="/contents/${it.id}/cancel">${hidden}
@@ -98,6 +110,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
     <dt>Thị trường</dt><dd>${marketTag(it.market)}</dd>
     <dt>Định dạng</dt><dd>${FORMAT[it.format] ?? it.format}</dd>
     <dt>Giờ đăng</dt><dd>${when(it.scheduled_at, it.market)}</dd>
+    ${v.fbUrl ? html`<dt>Trên Facebook</dt><dd><a href="${v.fbUrl}" target="_blank" rel="noopener noreferrer">Mở bài</a></dd>` : empty}
     <dt>Bản hiện tại</dt><dd>v${it.current_revision} <span class="mono muted">${d.packageHash.slice(0, 10)}</span></dd>
     <dt>Sinh bởi</dt><dd>${d.model ?? '-'}</dd>
     <dt>Sửa lần cuối</dt><dd>${d.editedBy ?? 'AI (chưa ai sửa)'}</dd>
@@ -121,7 +134,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
           <div class="panel"><div class="panel-h">Xem trước bài đăng</div><div class="panel-b">${preview}</div></div>
           ${sources}${editForm}
         </div>
-        <aside>${decision}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
+        <aside>${decision}${publishBox}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
       </div>
     </div>`,
   );

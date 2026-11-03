@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { freshDb } from './helpers/freshDb.ts';
 import type { Actor } from '../src/auth.ts';
 import { packageHash, type ContentPackage } from '../src/domain/package.ts';
 import { HttpError } from '../src/domain/retry.ts';
@@ -12,6 +13,7 @@ import { cancelScheduled, publishApproved, publishOne, reconcileScheduled, type 
 
 const URL_ = process.env.TEST_DATABASE_URL;
 const d = URL_ ? describe : describe.skip;
+const MIGRATIONS = ['001_init.sql', '002_users.sql', '003_publish_audit.sql', '004_settings.sql', '005_rename_app_config.sql'];
 
 const vn: Actor = { email: 'vn@t', name: 'VN', roles: ['approver_vn'] };
 const future = (min: number) => new Date(Date.now() + min * 60_000);
@@ -27,24 +29,17 @@ const pkg = (): ContentPackage => ({
 });
 
 d('đăng Meta (PostgreSQL thật, Meta giả)', () => {
-  const schema = `p_${randomBytes(4).toString('hex')}`;
-  let admin: pg.Pool;
-  let db: pg.Pool;
+  let drop: (() => Promise<void>) | undefined;  let db: pg.Pool;
   let mock: { postFeed: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn>; deletePost: ReturnType<typeof vi.fn> };
   let deps: PublisherDeps;
 
   beforeAll(async () => {
-    admin = new pg.Pool({ connectionString: URL_ });
-    await admin.query(`CREATE SCHEMA ${schema}`);
-    db = new pg.Pool({ connectionString: URL_, options: `-c search_path=${schema}` });
-    for (const f of ['001_init.sql', '002_users.sql', '003_publish_audit.sql']) {
-      await db.query(readFileSync(new URL(`../db/migrations/${f}`, import.meta.url), 'utf8'));
-    }
+    const fresh = await freshDb(URL_!, MIGRATIONS);
+    db = fresh.db;
+    drop = fresh.drop;
   });
   afterAll(async () => {
-    await db?.end();
-    await admin?.query(`DROP SCHEMA ${schema} CASCADE`);
-    await admin?.end();
+    await drop?.();
   });
   beforeEach(() => {
     mock = {

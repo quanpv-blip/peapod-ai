@@ -3,6 +3,8 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyFormbody from '@fastify/formbody';
 import { loadBaseConfig, requireEnv } from './config.ts';
 import { createPool, ping } from './db.ts';
+import { readFileSync } from 'node:fs';
+import { createGeminiClient } from './providers/gemini.ts';
 import { createMetaClient } from './providers/meta.ts';
 import { pagesFromEnv } from './services/publish.ts';
 import { registerWeb } from './web/routes.ts';
@@ -25,11 +27,14 @@ await app.register(fastifyCookie);
 await app.register(fastifyFormbody);
 // Đăng Meta chỉ bật khi có cấu hình Trang; không có thì giao diện vẫn chạy, chỉ không hủy được bài đã hẹn.
 const pages = pagesFromEnv(process.env);
+// Sinh bản tin bằng AI chỉ bật khi có khóa Gemini. Schema đọc từ cùng nguồn với bộ kiểm tra (schemas/).
+const schema = JSON.parse(readFileSync(new URL('../schemas/content_package.schema.json', import.meta.url), 'utf8')).schema as object;
 await registerWeb(app, {
   db: pool,
   sessionSecret,
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   publisher: Object.keys(pages).length ? { db: pool, meta: createMetaClient(), pages } : undefined,
+  generator: process.env.GEMINI_API_KEY ? { gemini: createGeminiClient(), schema } : undefined,
 });
 
 // Công khai, không lộ chi tiết (xem docs/10 mục 3).

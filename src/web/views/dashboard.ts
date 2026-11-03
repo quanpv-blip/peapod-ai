@@ -1,9 +1,17 @@
 import { OVERDUE_HOURS, type Stats } from '../../services/stats.ts';
 import { marketTag, span, STATE, when } from '../components.ts';
 import { empty, html, type Safe } from '../html.ts';
-import { page, type PageCtx } from '../layout.ts';
+import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
 import type { AuditRow } from './audit.ts';
 import { ACTION } from '../components.ts';
+
+export interface SystemView {
+  metaOn: boolean;
+  geminiOn: boolean;
+  paused: boolean;
+  isAdmin: boolean;
+  flash?: Flash;
+}
 
 const TONE_BG: Record<string, string> = { '': 'c-mute-bg', ok: 'c-ok-bg', warn: 'c-warn-bg', bad: 'c-bad-bg', info: 'c-info-bg' };
 const ORDER = ['IN_REVIEW', 'CHANGES_REQUESTED', 'APPROVED', 'SCHEDULED', 'PUBLISHING', 'PUBLISHED', 'GENERATING', 'MEDIA_PENDING', 'REJECTED', 'CANCELLED', 'FAILED_GENERATE', 'FAILED_MEDIA', 'FAILED_PUBLISH'];
@@ -15,7 +23,26 @@ function kpi(label: string, tone: string, value: string | number, unit: string, 
   return html`<div class="kpi"><div class="kpi-l"><i class="c-${tone}"></i>${label}</div><div class="kpi-v">${value}<small>${unit}</small></div><div class="kpi-s">${sub}</div></div>`;
 }
 
-export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, recent: AuditRow[], markets: ('VN' | 'JP')[]): string {
+export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, recent: AuditRow[], markets: ('VN' | 'JP')[], sys?: SystemView): string {
+  const dot = (ok: boolean, text: string) => html`<li class="${ok ? 'pass' : 'fail'}"><span class="k">${ok ? '✓' : '✕'}</span><span>${text}</span></li>`;
+  const hidden = html`<input type="hidden" name="_csrf" value="${ctx.csrf}">`;
+  const sysPanel = sys
+    ? html`<div class="panel"><div class="panel-h">Hệ thống</div><div class="panel-b">
+        ${flashBox(sys.flash)}
+        <ul class="checks">
+          ${dot(sys.metaOn, sys.metaOn ? 'Đăng lên Trang Facebook (Meta): đã cấu hình' : 'Đăng lên Trang Facebook (Meta): chưa cấu hình')}
+          ${dot(sys.geminiOn, sys.geminiOn ? 'Sinh bản tin bằng AI (Gemini): đã cấu hình' : 'Sinh bản tin bằng AI (Gemini): chưa cấu hình')}
+          ${dot(!sys.paused, sys.paused ? 'Công tắc tạm dừng: ĐANG BẬT' : 'Công tắc tạm dừng: tắt, hoạt động bình thường')}
+        </ul>
+        ${sys.isAdmin
+          ? sys.paused
+            ? html`<form method="post" action="/admin/pause" class="actions" style="margin-top:12px">${hidden}<input type="hidden" name="action" value="resume"><button class="btn" type="submit">Tắt công tắc, cho hoạt động lại</button></form>`
+            : html`<form method="post" action="/admin/pause" style="margin-top:12px">${hidden}<input type="hidden" name="action" value="pause">
+                <label class="check"><input type="checkbox" name="confirm" value="1" required> Tôi hiểu: bật công tắc sẽ dừng hẹn bài mới lên Trang và sinh bài mới. Hủy bài và đối soát vẫn chạy.</label>
+                <button class="btn danger" type="submit">Bật công tắc tạm dừng</button></form>`
+          : empty}
+      </div></div>`
+    : empty;
   const total = sum(s.byState);
   const scheduled = sum(s.byState, ['APPROVED', 'SCHEDULED']);
   const published = s.byState['PUBLISHED'] ?? 0;
@@ -69,6 +96,7 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
     { ...ctx, title: 'Tổng quan', nav: 'dash' },
     html`<div class="page">
       <div class="page-head"><div><h1>Tổng quan</h1><div class="sub">Tình hình duyệt và đăng bài của ${markets.join(' và ')}</div></div><a class="btn primary" href="/queue?state=IN_REVIEW">Mở hàng chờ duyệt</a></div>
+      ${sysPanel}
       ${kpis}
       <div class="cols"><div>${stateCard}${chart}</div><div>${upcoming}${marketCard}${activity}</div></div>
     </div>`,

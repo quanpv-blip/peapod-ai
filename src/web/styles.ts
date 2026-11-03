@@ -180,6 +180,21 @@ details.more{border-top:1px solid var(--line);padding-top:12px;margin-top:14px}
 details.more>summary{cursor:pointer;font-weight:600;color:var(--ink-2);margin-bottom:10px}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 
+/* banner công tắc tạm dừng */
+.banner{background:var(--bad-bg);color:var(--bad);border-bottom:1px solid #f1c3bd;padding:10px 32px;font-size:13.5px}
+
+/* thanh công cụ hàng chờ */
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.toolbar form{display:flex;gap:8px;align-items:center;margin:0;flex-wrap:wrap}
+.toolbar input[type=search]{height:34px;width:260px;padding:0 10px;border:1px solid var(--line-2);border-radius:4px;font:inherit;background:#fff}
+.toolbar select{height:34px;padding:0 8px;border:1px solid var(--line-2);border-radius:4px;font:inherit;background:#fff}
+.sep{flex:1}
+.secret{background:var(--warn-bg);border:1px solid #f0d9a8;border-radius:6px;padding:12px 14px;margin:0 0 16px}
+.secret code{font-family:Consolas,monospace;font-size:14px;background:#fff;padding:2px 8px;border:1px solid var(--line);border-radius:4px;user-select:all}
+.inline{display:inline}
+.inline form{display:inline}
+.tbl-act{display:flex;gap:6px;flex-wrap:wrap}
+
 /* đăng nhập */
 .login{max-width:360px;margin:12vh auto 0;padding:0 20px}
 .login h1{margin-bottom:4px}

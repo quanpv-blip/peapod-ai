@@ -8,6 +8,7 @@ import { feedPost, isDefinitiveRejection, scheduleGate } from '../domain/publish
 import { assertTransition, type State } from '../domain/states.ts';
 import type { MetaClient } from '../providers/meta.ts';
 import { AppError, getContent, hasPendingPublish } from './contents.ts';
+import { isPaused } from './settings.ts';
 
 export interface PagePair {
   id: string;
@@ -192,6 +193,7 @@ async function recordSuccess(deps: PublisherDeps, page: PagePair, row: Row, atte
 
 /** Hẹn giờ một bài đã duyệt lên Meta. */
 export async function publishOne(deps: PublisherDeps, id: number, dryRun = false): Promise<Result> {
+  if (!dryRun && (await isPaused(deps.db))) return { id, outcome: 'skipped', detail: 'Công tắc tạm dừng đang bật' };
   const now = deps.now?.() ?? new Date();
   const c0 = await claim(deps, id, now, dryRun);
   if (c0.kind === 'done') return c0.result;
@@ -216,6 +218,7 @@ export async function publishOne(deps: PublisherDeps, id: number, dryRun = false
 export async function publishApproved(deps: PublisherDeps, opts: { dryRun?: boolean } = {}): Promise<Result[]> {
   const markets = Object.keys(deps.pages) as Market[];
   if (markets.length === 0) return [];
+  if (!opts.dryRun && (await isPaused(deps.db))) return [{ id: 0, outcome: 'skipped', detail: 'Công tắc tạm dừng đang bật: không hẹn bài mới' }];
   const r = await deps.db.query<{ id: string }>("SELECT id FROM content_item WHERE state = 'APPROVED' AND market = ANY($1) ORDER BY scheduled_at NULLS LAST LIMIT 20", [markets]);
   const out: Result[] = [];
   for (const x of r.rows) out.push(await publishOne(deps, Number(x.id), opts.dryRun));
