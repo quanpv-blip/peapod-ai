@@ -55,7 +55,7 @@ export async function suggestTopics(deps: SuggestDeps, market: Market): Promise<
         aiNote = 'AI không trả về chủ đề hợp lệ. Hiển thị tin mới nhất.';
       } catch (e) {
         // AI lỗi (hết hạn mức, quá tải, quá chậm) không được làm hỏng trang: báo lý do và rơi về tin mới nhất.
-        aiNote = `AI tạm không dùng được: ${(e as Error).message.slice(0, 160)}. Hiển thị tin mới nhất.`;
+        aiNote = `${(e as Error).message.slice(0, 200)}. Hiển thị tin mới nhất.`;
       }
     }
   }

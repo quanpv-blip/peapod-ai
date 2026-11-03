@@ -81,6 +81,6 @@ d('đề xuất chủ đề khi AI lỗi (PostgreSQL thật)', () => {
     const r = await suggestTopics({ db, gemini, model: 'm' }, 'VN');
     expect(r.source).toBe('tin-mới');
     expect(r.topics.length).toBe(1);
-    expect(r.aiNote).toContain('AI tạm không dùng được');
+    expect(r.aiNote).toContain('Hiển thị tin mới nhất');
   });
 });
