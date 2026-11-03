@@ -5,6 +5,7 @@ import { loadBaseConfig, requireEnv } from './config.ts';
 import { createPool, ping } from './db.ts';
 import { readFileSync } from 'node:fs';
 import { createGeminiClient } from './providers/gemini.ts';
+import { modelChainFromEnv, withFallback } from './providers/aiChain.ts';
 import { createMetaClient } from './providers/meta.ts';
 import { pagesFromEnv } from './services/publish.ts';
 import { registerWeb } from './web/routes.ts';
@@ -34,7 +35,7 @@ await registerWeb(app, {
   sessionSecret,
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   publisher: Object.keys(pages).length ? { db: pool, meta: createMetaClient(), pages } : undefined,
-  generator: process.env.GEMINI_API_KEY ? { gemini: createGeminiClient(), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: 'gemini-3.6-flash' } : undefined,
+  generator: process.env.GEMINI_API_KEY ? { gemini: withFallback(createGeminiClient(), modelChainFromEnv()), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: modelChainFromEnv()[0] ?? 'gemini-3.5-flash' } : undefined,
 });
 
 // Công khai, không lộ chi tiết (xem docs/10 mục 3).

@@ -20,6 +20,8 @@ export interface SuggestResult {
   /** 'ai' khi mô hình đề xuất; 'tin-mới' khi rơi về danh sách tin mới nhất; 'trống' khi không có tin. */
   source: 'ai' | 'tin-mới' | 'trống';
   items: SourceItem[];
+  /** Lý do AI không dùng được (khi rơi về danh sách tin mới), để hiển thị cho người dùng. */
+  aiNote?: string;
 }
 
 export interface SuggestDeps {
@@ -34,23 +36,32 @@ export async function suggestTopics(deps: SuggestDeps, market: Market): Promise<
   const items = await recentItems(deps.db, market, now, 3, 40);
   if (items.length === 0) return { topics: [], source: 'trống', items };
 
+  let aiNote: string | undefined;
   if (deps.gemini) {
     const s = await getAppSettings(deps.db);
     const cap = await capCheck(deps.db, s, now);
-    if (cap.allowed) {
-      const known = new Set(items.map((i) => i.url));
-      const lines = items.map((i) => `${sanitize(i.title).text} — ${i.url}`).join('\n');
-      // Schema riêng của đề xuất (không dùng schema bài đăng).
-      const gen = await deps.gemini.generateJson({ model: deps.model, system: SUGGEST_RULES, user: suggestUserPrompt(market, lines), schema: SUGGEST_SCHEMA as unknown as object });
-      const cost = estimateCost({ inputTokens: gen.usage.inputTokens, outputTokens: gen.usage.outputTokens, thoughtTokens: gen.usage.thoughtTokens }, s);
-      await recordUsage(deps.db, { market, purpose: 'NEWS', model: deps.model, usage: gen.usage, costUsd: cost });
-      const topics = validTopics((gen.json as { topics?: unknown }).topics, known);
-      if (topics.length > 0) return { topics, source: 'ai', items };
+    if (!cap.allowed) {
+      aiNote = `${cap.reason}. Hiển thị tin mới nhất.`;
+    } else {
+      try {
+        const known = new Set(items.map((i) => i.url));
+        const lines = items.map((i) => `${sanitize(i.title).text} — ${i.url}`).join('\n');
+        // Schema riêng của đề xuất (không dùng schema bài đăng).
+        const gen = await deps.gemini.generateJson({ model: deps.model, system: SUGGEST_RULES, user: suggestUserPrompt(market, lines), schema: SUGGEST_SCHEMA as unknown as object });
+        const cost = estimateCost({ inputTokens: gen.usage.inputTokens, outputTokens: gen.usage.outputTokens, thoughtTokens: gen.usage.thoughtTokens }, s);
+        await recordUsage(deps.db, { market, purpose: 'NEWS', model: gen.model ?? deps.model, usage: gen.usage, costUsd: cost });
+        const topics = validTopics((gen.json as { topics?: unknown }).topics, known);
+        if (topics.length > 0) return { topics, source: 'ai', items };
+        aiNote = 'AI không trả về chủ đề hợp lệ. Hiển thị tin mới nhất.';
+      } catch (e) {
+        // AI lỗi (hết hạn mức, quá tải, quá chậm) không được làm hỏng trang: báo lý do và rơi về tin mới nhất.
+        aiNote = `AI tạm không dùng được: ${(e as Error).message.slice(0, 160)}. Hiển thị tin mới nhất.`;
+      }
     }
   }
   // Rơi về: mỗi tin mới nhất là một chủ đề (không cần AI).
   const topics = items.slice(0, 6).map((i) => ({ title: i.title, reason: 'Tin mới nhất trong nguồn đã cấu hình', urls: [i.url] }));
-  return { topics, source: 'tin-mới', items };
+  return { topics, source: 'tin-mới', items, aiNote };
 }
 
 /** Lọc đề xuất của mô hình: chỉ giữ URL có trong kho; bỏ chủ đề không còn URL hợp lệ. */

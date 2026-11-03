@@ -102,7 +102,7 @@ async function generateFromItem(
       schema: deps.schema,
     });
     const costUsd = estimateCost({ inputTokens: gen.usage.inputTokens, outputTokens: gen.usage.outputTokens, thoughtTokens: gen.usage.thoughtTokens }, s);
-    await recordUsage(deps.db, { market, purpose, model, usage: gen.usage, costUsd });
+    await recordUsage(deps.db, { market, purpose, model: gen.model ?? model, usage: gen.usage, costUsd });
 
     const v = validatePackage(gen.json);
     if (!v.ok) return { title, outcome: 'skipped', detail: `schema: ${v.errors[0]}` };
@@ -111,7 +111,7 @@ async function generateFromItem(
     if (unknownSources(pkg, [item.url]).length) return { title, outcome: 'skipped', detail: 'nguồn không nằm trong nguồn đã cung cấp' };
     if (!languageMatchesMarket(pkg.post.body, market)) return { title, outcome: 'skipped', detail: 'sai ngôn ngữ' };
 
-    const id = await createGenerated(deps.db, pkg, model);
+    const id = await createGenerated(deps.db, pkg, gen.model ?? model);
     if (pkg.media.engine === 'REMOTION_CARD') {
       try {
         await storeCard(deps.db, deps.mediaDir, id, 1, pkg, deps.now?.());
@@ -191,7 +191,7 @@ async function generateFromBrief(
   try {
     const gen = await deps.gemini.generateJson({ model, system, user, schema: deps.schema });
     const costUsd = estimateCost({ inputTokens: gen.usage.inputTokens, outputTokens: gen.usage.outputTokens, thoughtTokens: gen.usage.thoughtTokens }, s);
-    await recordUsage(deps.db, { market, purpose, model, usage: gen.usage, costUsd });
+    await recordUsage(deps.db, { market, purpose, model: gen.model ?? model, usage: gen.usage, costUsd });
 
     const v = validatePackage(gen.json);
     if (!v.ok) return { title, outcome: 'skipped', detail: `schema: ${v.errors[0]}` };
@@ -200,7 +200,7 @@ async function generateFromBrief(
     if (unknownSources(pkg, items.map((i) => i.url)).length) return { title, outcome: 'skipped', detail: 'nguồn không nằm trong tin đã thu thập' };
     if (!languageMatchesMarket(pkg.post.body, market)) return { title, outcome: 'skipped', detail: 'sai ngôn ngữ' };
 
-    const id = await createGenerated(deps.db, pkg, model);
+    const id = await createGenerated(deps.db, pkg, gen.model ?? model);
     if (pkg.media.engine === 'REMOTION_CARD') {
       try {
         await storeCard(deps.db, deps.mediaDir, id, 1, pkg, deps.now?.());

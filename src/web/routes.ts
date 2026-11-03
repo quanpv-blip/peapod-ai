@@ -84,6 +84,16 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   const secret = o.sessionSecret;
   const svcOpts = { fourEyesMarkets: o.fourEyesMarkets ?? (['JP'] as Market[]) };
 
+  // Lỗi bất ngờ: trang HTML thân thiện thay cho JSON 500; chi tiết chỉ ghi vào nhật ký máy chủ.
+  app.setErrorHandler((err: Error, req, reply) => {
+    app.log.error({ err: err.message, url: req.url }, 'lỗi xử lý yêu cầu');
+    if (reply.sent) return;
+    if (!String(req.headers.accept ?? '').includes('text/html')) return reply.code(500).send({ error: 'Có lỗi tạm thời, thử lại sau' });
+    return reply.code(500).type('text/html; charset=utf-8').send(
+      page({ title: 'Có lỗi' }, h`<div class="page"><h1>Có lỗi tạm thời</h1><p class="muted">Hệ thống chưa xử lý được yêu cầu này. Thử lại sau ít phút. Nếu vẫn lỗi, báo quản trị viên kèm thời điểm này.</p><p><a href="/">Về tổng quan</a></p></div>`),
+    );
+  });
+
   app.addHook('onSend', async (_req, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');

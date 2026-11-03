@@ -63,7 +63,8 @@ export function extractAudio(i: Interaction): { data: Buffer; mimeType: string }
 }
 
 export interface GeminiClient {
-  generateJson(args: { model: string; system: string; user: string; schema: object }): Promise<{ text: string; json: unknown; usage: GeminiUsage; raw: unknown }>;
+  /** `model` trong kết quả là mô hình thực đã trả lời (quan trọng khi có chuỗi dự phòng). */
+  generateJson(args: { model: string; system: string; user: string; schema: object }): Promise<{ model: string; text: string; json: unknown; usage: GeminiUsage; raw: unknown }>;
   tts(args: { model: string; text: string; voice?: string }): Promise<{ wav: Buffer; usage: GeminiUsage }>;
 }
 
@@ -73,10 +74,11 @@ export function createGeminiClient(env: NodeJS.ProcessEnv = process.env): Gemini
   return {
     async generateJson({ model, system, user, schema }) {
       // Chưa xác nhận tên trường system instruction của Interactions API: ghép vào đầu `input` (⚠️ thử ở PoC sau).
+      // Tương tác của người dùng: không tự thử lại (hết hạn mức hay chậm thì báo ngay và để chuyển mô hình dự phòng).
       const res = await requestJson<Interaction>(`${BASE}/interactions`, {
         headers,
-        idempotent: true,
-        timeoutMs: 120_000,
+        idempotent: false,
+        timeoutMs: 60_000,
         body: {
           model,
           input: `${system}\n\n---\n\n${user}`,
@@ -90,7 +92,7 @@ export function createGeminiClient(env: NodeJS.ProcessEnv = process.env): Gemini
       } catch {
         /* để validator ở tầng trên báo lỗi */
       }
-      return { text, json, usage: usageOf(res.json), raw: res.json };
+      return { model, text, json, usage: usageOf(res.json), raw: res.json };
     },
 
     async tts({ model, text, voice }) {

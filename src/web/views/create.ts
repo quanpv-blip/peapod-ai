@@ -56,6 +56,7 @@ export function createPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: CreateOpts): 
     html`<div class="page">
       <div class="page-head"><div><div class="crumb">Công việc</div><h1>Tạo bài viết mới</h1><div class="sub">Chọn thị trường, để hệ thống đề xuất chủ đề từ các tin mới, rồi chọn một chủ đề. Hệ thống tìm tin liên quan và viết bài; bài vào hàng chờ duyệt.</div></div></div>
       ${flashBox(o.flash)}
+      ${o.suggest?.aiNote ? html`<div class="notice warn" role="status">${o.suggest.aiNote}</div>` : empty}
       ${blocked ? html`<div class="notice warn">${!o.aiOn ? 'Chưa cấu hình khóa Gemini (GEMINI_API_KEY) nên chưa viết được bài.' : 'Tài khoản chưa có quyền duyệt thị trường nào.'}</div>` : empty}
       <div class="cols">
         <div>
@@ -64,13 +65,14 @@ export function createPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: CreateOpts): 
               <label class="inline-label">Thị trường ${marketSelect}</label>
               <button class="btn primary" type="submit"${o.markets.length === 0 ? ' disabled' : ''}>Đề xuất chủ đề</button>
             </form>
+            <div class="hint">AI có thể mất 20–60 giây. Vui lòng chờ, không bấm lặp lại.</div>
           </div></section>
           ${suggestions}
           <section class="panel"><div class="panel-h"><div>Bước 2 · Hoặc tự nhập chủ đề</div></div><div class="panel-b">
             <form method="post" action="/create/generate" class="form-grid">${hidden}
               <div class="field"><label for="m2">Thị trường</label><select id="m2" name="market">${o.markets.map((m) => html`<option value="${m}"${m === o.market ? ' selected' : ''}>${m}</option>`)}</select></div>
               <div class="field"><label for="topic">Chủ đề</label><input id="topic" name="topic" type="text" required maxlength="60" value="${o.topic ?? ''}" placeholder="Ví dụ: chip bán dẫn Việt Nam"><div class="hint">Hệ thống tìm tin liên quan đến các từ khóa trong chủ đề trong kho 14 ngày gần đây.</div></div>
-              <div class="full savebar"><button class="btn primary" type="submit"${blocked ? ' disabled' : ''}>Tìm tin và tạo bài</button></div>
+              <div class="full savebar"><span class="hint">Có thể mất 20–60 giây.</span><button class="btn primary" type="submit"${blocked ? ' disabled' : ''}>Tìm tin và tạo bài</button></div>
             </form>
           </div></section>
         </div>
