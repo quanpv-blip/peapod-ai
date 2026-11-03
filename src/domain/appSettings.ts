@@ -4,6 +4,8 @@ import type { Market } from './package.ts';
 export interface AppSettings {
   /** Nguồn RSS theo thị trường (mỗi dòng một URL https). */
   feeds: Record<Market, string[]>;
+  /** Số bài sinh tự động mỗi lần chạy, theo thị trường (1–5). */
+  genCount: Record<Market, number>;
   /** Giờ chạy sinh bài hằng ngày theo giờ địa phương (HH:MM). */
   genTime: Record<Market, string>;
   /** Giờ đăng mặc định khi duyệt (HH:MM địa phương). */
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     JP: ['https://xtech.nikkei.com/rss/index.rdf', 'https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml'],
     VN: ['https://vnexpress.net/rss/so-hoa.rss'],
   },
+  genCount: { VN: 2, JP: 2 },
   genTime: { VN: '07:00', JP: '07:00' },
   defaultPostTime: { VN: '11:30', JP: '12:00' },
   dailyCapUsd: 2,
@@ -80,6 +83,7 @@ export function parseSettings(form: Record<string, unknown>): SettingsCheck {
 
   const value: AppSettings = {
     feeds: { JP: feeds('feedsJP', 'Nguồn RSS JP'), VN: feeds('feedsVN', 'Nguồn RSS VN') },
+    genCount: { JP: num('genCountJP', 1, 5, 'Số bài sinh mỗi lần (JP)'), VN: num('genCountVN', 1, 5, 'Số bài sinh mỗi lần (VN)') },
     genTime: { JP: time('genTimeJP', 'Giờ sinh bài JP'), VN: time('genTimeVN', 'Giờ sinh bài VN') },
     defaultPostTime: { JP: time('postTimeJP', 'Giờ đăng mặc định JP'), VN: time('postTimeVN', 'Giờ đăng mặc định VN') },
     dailyCapUsd: num('dailyCapUsd', 0, 1000, 'Trần ngày (USD)'),
@@ -101,6 +105,8 @@ export function settingsToForm(s: AppSettings): Record<string, string> {
   return {
     feedsJP: s.feeds.JP.join('\n'),
     feedsVN: s.feeds.VN.join('\n'),
+    genCountJP: String(s.genCount.JP),
+    genCountVN: String(s.genCount.VN),
     genTimeJP: s.genTime.JP,
     genTimeVN: s.genTime.VN,
     postTimeJP: s.defaultPostTime.JP,

@@ -5,13 +5,14 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { languageMatchesMarket, unknownSources, validatePackage, type ContentPackage, type Market } from '../domain/package.ts';
-import { NEWS_RULES, NEWS_VOICE, newsUserPrompt, unusedItems } from '../domain/editorial.ts';
+import { NEWS_RULES, NEWS_VOICE, newsUserPrompt, TOPIC_RULES, topicUserPrompt, unusedItems } from '../domain/editorial.ts';
 import { campaignSourceAllowed, type AppSettings } from '../domain/appSettings.ts';
 import { dedupeByUrl, parseFeed, type FeedItem } from '../domain/rss.ts';
 import { sanitize } from '../domain/sanitizer.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import { renderCard, CARD_H, CARD_W } from '../media/card.ts';
 import { createGenerated } from './contents.ts';
+import { recentItems, scoreItems, type SourceItem } from './sources.ts';
 import { getAppSettings } from './appSettings.ts';
 import { capCheck, estimateCost, recordUsage } from './costs.ts';
 import { isPaused } from './settings.ts';
@@ -169,4 +170,83 @@ export async function generateCampaign(deps: GenerateDeps, input: CampaignInput)
   if (input.sourceText.trim().length < 80) return { title: input.topic, outcome: 'skipped', detail: 'Nội dung nguồn quá ngắn (cần ít nhất 80 ký tự)' };
   const summary = [input.sourceText.trim(), input.note?.trim() ? `Ghi chú chủ đề: ${input.note.trim()}` : ''].filter(Boolean).join('\n');
   return generateFromItem(deps, s, input.market, { title: input.topic, url: input.sourceUrl, summary }, input.model, 'CAMPAIGN');
+}
+
+// --- Tạo bài theo chủ đề: AI viết từ nhiều tin RSS liên quan (người duyệt chọn chủ đề) ---
+
+/** Một lần gọi AI với nhiều tin làm căn cứ. Kiểm tra cùng quy tắc như bản tin đơn. */
+async function generateFromBrief(
+  deps: GenerateDeps,
+  s: AppSettings,
+  market: Market,
+  items: { title: string; url: string; summary: string }[],
+  system: string,
+  user: string,
+  model: string,
+  purpose: 'NEWS' | 'CAMPAIGN',
+  title: string,
+): Promise<GenerateResult> {
+  const cap = await capCheck(deps.db, s, deps.now?.());
+  if (!cap.allowed) return { title, outcome: 'skipped', detail: cap.reason! };
+  try {
+    const gen = await deps.gemini.generateJson({ model, system, user, schema: deps.schema });
+    const costUsd = estimateCost({ inputTokens: gen.usage.inputTokens, outputTokens: gen.usage.outputTokens, thoughtTokens: gen.usage.thoughtTokens }, s);
+    await recordUsage(deps.db, { market, purpose, model, usage: gen.usage, costUsd });
+
+    const v = validatePackage(gen.json);
+    if (!v.ok) return { title, outcome: 'skipped', detail: `schema: ${v.errors[0]}` };
+    const pkg = v.value;
+    if (pkg.market !== market) return { title, outcome: 'skipped', detail: 'sai thị trường' };
+    if (unknownSources(pkg, items.map((i) => i.url)).length) return { title, outcome: 'skipped', detail: 'nguồn không nằm trong tin đã thu thập' };
+    if (!languageMatchesMarket(pkg.post.body, market)) return { title, outcome: 'skipped', detail: 'sai ngôn ngữ' };
+
+    const id = await createGenerated(deps.db, pkg, model);
+    if (pkg.media.engine === 'REMOTION_CARD') {
+      try {
+        await storeCard(deps.db, deps.mediaDir, id, 1, pkg, deps.now?.());
+      } catch (e) {
+        console.warn(`cảnh báo: chưa dựng được ảnh thẻ bài #${id}: ${(e as Error).message.slice(0, 120)}`);
+      }
+    }
+    return { title: pkg.post.headline, outcome: 'created', detail: `bài #${id}`, id, pkg };
+  } catch (e) {
+    return { title, outcome: 'error', detail: (e as Error).message.slice(0, 160) };
+  }
+}
+
+export interface TopicRequest {
+  market: Market;
+  topic: string;
+  /** Các URL tin người duyệt đã chọn (từ đề xuất). Trống thì hệ thống tự tìm tin theo từ khóa chủ đề. */
+  urls?: string[];
+  model: string;
+  /** Số tin tối đa làm căn cứ. */
+  maxSources?: number;
+}
+
+/** Tạo bài theo chủ đề: lấy tin liên quan từ kho RSS (14 ngày), rồi AI viết bài có nhiều nguồn. */
+export async function generateTopic(deps: GenerateDeps, req: TopicRequest): Promise<GenerateResult> {
+  const title = req.topic.trim().slice(0, 60);
+  if (await isPaused(deps.db)) return { title, outcome: 'skipped', detail: PAUSED_DETAIL };
+  const s = await getAppSettings(deps.db);
+  const now = deps.now?.() ?? new Date();
+  const pool = await recentItems(deps.db, req.market, now, 14, 300);
+  let chosen: SourceItem[];
+  if (req.urls && req.urls.length > 0) {
+    const want = new Set(req.urls);
+    chosen = pool.filter((i) => want.has(i.url));
+  } else {
+    chosen = scoreItems(pool, req.topic, req.maxSources ?? 3);
+  }
+  if (chosen.length === 0) {
+    return { title, outcome: 'skipped', detail: 'Không có tin liên quan trong 14 ngày gần đây. Chọn chủ đề khác hoặc chờ nguồn cập nhật.' };
+  }
+  const items = chosen.slice(0, req.maxSources ?? 3).map((i) => ({ title: i.title, url: i.url, summary: i.summary }));
+  const brief = items
+    .map((it, n) => {
+      const clean = sanitize(`${it.title} — ${it.summary}`);
+      return `${n + 1}. ${clean.text}\n   URL: ${it.url}`;
+    })
+    .join('\n');
+  return generateFromBrief(deps, s, req.market, items, `${TOPIC_RULES}\n\n${NEWS_VOICE[req.market]}`, topicUserPrompt(req.market, req.topic.trim(), brief), req.model, 'NEWS', title);
 }

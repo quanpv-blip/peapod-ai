@@ -51,7 +51,7 @@ export function page(ctx: PageCtx, body: Safe): string {
             ${item('dash', '/', 'Tổng quan')}
             ${item('queue', '/queue', 'Hàng chờ duyệt', ctx.pending)}
             ${item('schedule', '/schedule', 'Lịch đăng')}
-            ${item('campaign', '/campaign', 'Chiến dịch chủ đề')}
+            ${item('campaign', '/create', 'Tạo bài viết mới')}
             <div class="nav-g">Quản trị</div>
             ${ctx.user.roles.includes('admin') ? item('costs', '/costs', 'Chi phí AI') : empty}
             ${ctx.user.roles.includes('admin') ? item('settings', '/settings', 'Cài đặt') : empty}

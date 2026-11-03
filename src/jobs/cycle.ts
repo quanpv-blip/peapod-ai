@@ -8,12 +8,16 @@ import { generateNews } from '../services/generate.ts';
 import { autoApproveVN } from '../services/autoApprove.ts';
 import { isPaused } from '../services/settings.ts';
 import { publishApproved, reconcileScheduled, type PublisherDeps } from '../services/publish.ts';
+import { refreshSources } from '../services/sources.ts';
+import type { FeedItem } from '../domain/rss.ts';
 
 export interface CycleDeps {
   db: pg.Pool;
   publisher?: PublisherDeps;
   generator?: { gemini: GeminiClient; schema: object; mediaDir: string; model: string };
   notify: (text: string) => Promise<unknown>;
+  /** Lấy tin RSS để làm mới kho tin (mỗi 30 phút). Thiếu thì không làm mới. */
+  fetchFeeds?: (feeds: string[]) => Promise<FeedItem[]>;
   now?: () => Date;
 }
 
@@ -31,6 +35,18 @@ export async function runCycle(deps: CycleDeps): Promise<string[]> {
   const now = deps.now?.() ?? new Date();
   const log: string[] = [];
   if (await isPaused(deps.db)) return ['công tắc tạm dừng đang bật: bỏ qua chu kỳ'];
+
+  // Làm mới kho tin RSS mỗi 30 phút, để đề xuất chủ đề và tạo bài theo chủ đề luôn có tin mới.
+  if (deps.fetchFeeds) {
+    const cfg = await getAppSettings(deps.db);
+    const last = Number((await getFlag(deps.db, 'src_refreshed_at')) ?? 0);
+    if (now.getTime() - last > 30 * 60_000) {
+      const counts: string[] = [];
+      for (const m of ['VN', 'JP'] as Market[]) counts.push(`${m} ${await refreshSources(deps.db, m, cfg.feeds[m], deps.fetchFeeds)}`);
+      await setFlag(deps.db, 'src_refreshed_at', String(now.getTime()), 'system:cycle');
+      log.push(`làm mới kho tin RSS: ${counts.join(', ')}`);
+    }
+  }
 
   if (deps.publisher) {
     const pub = await publishApproved(deps.publisher);
@@ -53,7 +69,7 @@ export async function runCycle(deps: CycleDeps): Promise<string[]> {
       if ((await getFlag(deps.db, key)) === clock.day) continue;
       const results = await generateNews(
         { db: deps.db, gemini: deps.generator.gemini, schema: deps.generator.schema, mediaDir: deps.generator.mediaDir, now: () => now },
-        { market, limit: 2, model: deps.generator.model },
+        { market, limit: s.genCount[market], model: deps.generator.model },
       );
       await setFlag(deps.db, key, clock.day, 'system:cycle');
       const made = results.filter((r) => r.outcome === 'created').length;

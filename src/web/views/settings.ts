@@ -39,6 +39,8 @@ export function settingsPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: SettingsOpt
           ${field('feedsVN', 'Nguồn tiếng Việt', html`<textarea id="feedsVN" name="feedsVN" rows="4">${v('feedsVN')}</textarea>`)}
         `)}
         ${panel('Lịch chạy', 'Giờ địa phương của từng thị trường. Sinh bản tin chạy một lần mỗi ngày sau giờ này.', html`
+          ${field('genCountVN', 'Số bài sinh mỗi lần (VN)', html`<input id="genCountVN" name="genCountVN" type="number" step="1" min="1" max="5" value="${v('genCountVN')}">`, 'Số bản tin tự động sinh mỗi ngày (1–5). Người dùng vẫn tạo bài thủ công được ở trang Tạo bài viết mới.')}
+          ${field('genCountJP', 'Số bài sinh mỗi lần (JP)', html`<input id="genCountJP" name="genCountJP" type="number" step="1" min="1" max="5" value="${v('genCountJP')}">`)}
           ${field('genTimeVN', 'Giờ sinh bản tin VN', html`<input id="genTimeVN" name="genTimeVN" type="time" value="${v('genTimeVN')}" required>`)}
           ${field('genTimeJP', 'Giờ sinh bản tin JP', html`<input id="genTimeJP" name="genTimeJP" type="time" value="${v('genTimeJP')}" required>`)}
           ${field('postTimeVN', 'Giờ đăng mặc định VN', html`<input id="postTimeVN" name="postTimeVN" type="time" value="${v('postTimeVN')}" required>`, 'Điền sẵn khi duyệt bài. Người duyệt vẫn chọn được giờ khác.')}

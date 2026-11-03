@@ -9,7 +9,7 @@ export async function getAppSettings(db: pg.Pool | pg.PoolClient): Promise<AppSe
   if (!r.rows[0]) return DEFAULT_SETTINGS;
   try {
     const saved = JSON.parse(r.rows[0].value) as Partial<AppSettings>;
-    return { ...DEFAULT_SETTINGS, ...saved, feeds: { ...DEFAULT_SETTINGS.feeds, ...saved.feeds }, genTime: { ...DEFAULT_SETTINGS.genTime, ...saved.genTime }, defaultPostTime: { ...DEFAULT_SETTINGS.defaultPostTime, ...saved.defaultPostTime } };
+    return { ...DEFAULT_SETTINGS, ...saved, feeds: { ...DEFAULT_SETTINGS.feeds, ...saved.feeds }, genCount: { ...DEFAULT_SETTINGS.genCount, ...saved.genCount }, genTime: { ...DEFAULT_SETTINGS.genTime, ...saved.genTime }, defaultPostTime: { ...DEFAULT_SETTINGS.defaultPostTime, ...saved.defaultPostTime } };
   } catch {
     return DEFAULT_SETTINGS;
   }

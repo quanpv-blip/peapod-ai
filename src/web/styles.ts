@@ -193,6 +193,16 @@ details.more>summary{cursor:pointer;font-weight:600;color:var(--ink-2);margin-bo
 .settings .panel{margin:0}
 .settings .panel-b{padding-bottom:4px}
 
+/* đề xuất chủ đề và tạo bài */
+.topics{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.topic{border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;background:#fff}
+.topic h3{margin:0;font-size:15px;line-height:1.4}
+.topic form{margin-top:auto;padding-top:8px}
+.topic-src{margin:0;padding-left:18px;line-height:1.6}
+.toolbar-form{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0}
+.toolbar-form select{width:auto;min-width:110px}
+.inline-label{display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px}
+
 /* biểu đồ chi phí theo ngày (cột, CSS thuần) */
 .daybars{display:flex;gap:6px;align-items:flex-end;height:180px;overflow-x:auto;padding-bottom:2px}
 .dayb{flex:1;min-width:24px;height:100%;display:flex;flex-direction:column;align-items:center}

@@ -7,6 +7,7 @@ import { notifySlack } from './providers/slack.ts';
 import { createGeminiClient } from './providers/gemini.ts';
 import { createMetaClient } from './providers/meta.ts';
 import { pagesFromEnv } from './services/publish.ts';
+import { fetchFeeds } from './services/generate.ts';
 
 // Worker: hàng đợi pg-boss (ADR-03) giữ lại cho các job sau này; chu kỳ nền chạy theo nhịp, có khóa tư vấn để một lúc chỉ một tiến trình chạy.
 const cfg = loadBaseConfig();
@@ -31,6 +32,7 @@ const deps: CycleDeps = {
     ? { gemini: createGeminiClient(), schema, mediaDir: process.env.MEDIA_DIR ?? './media', model: 'gemini-3.6-flash' }
     : undefined,
   notify: (text) => notifySlack(text),
+  fetchFeeds: (feeds) => fetchFeeds(feeds),
 };
 
 const CYCLE_LOCK = 7101;

@@ -8,7 +8,7 @@ import * as svc from '../services/contents.ts';
 import { AppError } from '../services/contents.ts';
 import { getStats, pendingCount } from '../services/stats.ts';
 import { cancelScheduled, publishApproved, publishOne, reconcileScheduled, type PublisherDeps } from '../services/publish.ts';
-import { generateCampaign, generateNews } from '../services/generate.ts';
+import { generateCampaign, generateNews, generateTopic } from '../services/generate.ts';
 import { isPaused, setPaused } from '../services/settings.ts';
 import { createUser, listUsers, resetPassword, setDisabled } from '../services/users.ts';
 import { getAppSettings, saveAppSettings } from '../services/appSettings.ts';
@@ -20,6 +20,9 @@ import { readFile } from 'node:fs/promises';
 import { settingsPage } from './views/settings.ts';
 import { costsPage } from './views/costs.ts';
 import { campaignPage } from './views/campaign.ts';
+import { createPage } from './views/create.ts';
+import { recentItems } from '../services/sources.ts';
+import { suggestTopics } from '../services/topics.ts';
 import { accountPage } from './views/account.ts';
 import { page, type Flash } from './layout.ts';
 import { html as h } from './html.ts';
@@ -373,6 +376,50 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     }
   }));
 
+  // --- tạo bài viết mới: đề xuất chủ đề, rồi AI viết từ tin trong kho ---
+  const createMarkets = (s: Session): Market[] => visibleMarkets(s.actor).filter((m) => canReview(s.actor, m));
+  const pickMarket = (markets: Market[], raw: unknown): Market => {
+    const m = str(raw).toUpperCase() as Market;
+    return markets.includes(m) ? m : (markets[0] ?? 'VN');
+  };
+
+  app.get('/create', guarded(async (s, req, reply) => {
+    const markets = createMarkets(s);
+    const market = pickMarket(markets, (req.query as Record<string, unknown>).market);
+    const recent = await recentItems(o.db, market, new Date(), 3, 30);
+    return html(reply, createPage(ctxOf(s), { markets, market, recent, aiOn: !!o.generator }));
+  }));
+
+  app.post('/create/suggest', guarded(async (s, req, reply) => {
+    const markets = createMarkets(s);
+    const market = pickMarket(markets, (req.body as Record<string, unknown>).market);
+    if (markets.length === 0) return html(reply, createPage(ctxOf(s), { markets, market, recent: [], aiOn: !!o.generator, flash: { kind: 'err', text: 'Bạn chưa có quyền duyệt thị trường nào.' } }), 403);
+    const suggest = await suggestTopics({ db: o.db, gemini: o.generator?.gemini, model: o.generator?.model ?? 'gemini-3.6-flash' }, market);
+    const recent = await recentItems(o.db, market, new Date(), 3, 30);
+    return html(reply, createPage(ctxOf(s), { markets, market, recent, suggest, aiOn: !!o.generator }));
+  }));
+
+  app.post('/create/generate', guarded(async (s, req, reply) => {
+    const markets = createMarkets(s);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const market = pickMarket(markets, b.market);
+    const topic = str(b.topic).trim();
+    const urls = (Array.isArray(b.urls) ? b.urls : [b.urls]).map(str).filter(Boolean);
+    const fail = async (text: string, code = 422) => {
+      const recent = await recentItems(o.db, market, new Date(), 3, 30);
+      return html(reply, createPage(ctxOf(s), { markets, market, recent, aiOn: !!o.generator, topic, flash: { kind: 'err', text } }), code);
+    };
+    if (!o.generator) return fail('Chưa cấu hình khóa Gemini (GEMINI_API_KEY) nên chưa viết được bài.');
+    if (!markets.includes(str(b.market).toUpperCase() as Market)) return fail('Bạn không có quyền tạo bài cho thị trường này.', 403);
+    if (!topic) return fail('Cần nhập chủ đề.');
+    const r = await generateTopic(
+      { db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, mediaDir: o.generator.mediaDir },
+      { market, topic, urls: urls.length ? urls : undefined, model: o.generator.model },
+    );
+    if (r.outcome === 'created') return reply.redirect(`/contents/${r.id}`);
+    return fail(r.outcome === 'error' ? `Lỗi khi gọi AI: ${r.detail}` : r.detail);
+  }));
+
   // --- ảnh thẻ của bài (E6) ---
   app.get('/contents/:id/card', guarded(async (s, req, reply) => {
     try {
@@ -408,7 +455,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   // --- bài chiến dịch theo chủ đề ---
   app.get('/campaign', guarded(async (s, _req, reply) => {
     const markets = visibleMarkets(s.actor).filter((m) => canReview(s.actor, m));
-    return html(reply, campaignPage(ctxOf(s), { markets, domains: (await getAppSettings(o.db)).campaignDomains, aiOn: !!o.generator }));
+    return reply.redirect('/create');
   }));
 
   app.post('/campaign', guarded(async (s, req, reply) => {
