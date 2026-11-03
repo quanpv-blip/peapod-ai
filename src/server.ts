@@ -3,6 +3,8 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyFormbody from '@fastify/formbody';
 import { loadBaseConfig, requireEnv } from './config.ts';
 import { createPool, ping } from './db.ts';
+import { createMetaClient } from './providers/meta.ts';
+import { pagesFromEnv } from './services/publish.ts';
 import { registerWeb } from './web/routes.ts';
 
 const cfg = loadBaseConfig();
@@ -21,7 +23,14 @@ if (sessionSecret.length < 32) throw new Error('AUTH_SESSION_SECRET phải dài 
 
 await app.register(fastifyCookie);
 await app.register(fastifyFormbody);
-await registerWeb(app, { db: pool, sessionSecret, cookieSecure: process.env.COOKIE_SECURE === 'true' });
+// Đăng Meta chỉ bật khi có cấu hình Trang; không có thì giao diện vẫn chạy, chỉ không hủy được bài đã hẹn.
+const pages = pagesFromEnv(process.env);
+await registerWeb(app, {
+  db: pool,
+  sessionSecret,
+  cookieSecure: process.env.COOKIE_SECURE === 'true',
+  publisher: Object.keys(pages).length ? { db: pool, meta: createMetaClient(), pages } : undefined,
+});
 
 // Công khai, không lộ chi tiết (xem docs/10 mục 3).
 app.get('/healthz', async (_req, reply) => {

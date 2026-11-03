@@ -17,7 +17,8 @@ export interface DetailView {
   flash?: Flash;
 }
 
-const EDITABLE = ['IN_REVIEW', 'APPROVED', 'SCHEDULED'];
+// Bài đã hẹn giờ trên Meta không sửa được: phải hủy hẹn giờ trước (xem services/publish.ts).
+const EDITABLE = ['IN_REVIEW', 'APPROVED'];
 
 export function detailView(v: DetailView): string {
   const { d } = v;

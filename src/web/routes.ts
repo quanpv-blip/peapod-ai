@@ -5,6 +5,7 @@ import { fromLocalInput, nextBusinessSlot, DEFAULT_LOCAL_TIME, toLocalInput } fr
 import * as svc from '../services/contents.ts';
 import { AppError } from '../services/contents.ts';
 import { getStats, pendingCount } from '../services/stats.ts';
+import { cancelScheduled, type PublisherDeps } from '../services/publish.ts';
 import type { Flash } from './layout.ts';
 import { CSS } from './styles.ts';
 import { auditView } from './views/audit.ts';
@@ -19,6 +20,8 @@ export interface WebOptions {
   sessionSecret: string;
   cookieSecure: boolean;
   fourEyesMarkets?: ('VN' | 'JP')[];
+  /** Có khi đã cấu hình Trang Meta. Thiếu thì không hủy được bài đã hẹn giờ (không thể xóa bên Meta). */
+  publisher?: PublisherDeps;
 }
 
 const SESSION_TTL = 8 * 3600;
@@ -212,7 +215,13 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
 
   app.post('/contents/:id/request-changes', action('changes', (s, id, b) => svc.requestChanges(o.db, s.actor, id, str(b.note))));
   app.post('/contents/:id/reject', action('rejected', (s, id, b) => svc.reject(o.db, s.actor, id, str(b.note))));
-  app.post('/contents/:id/cancel', action('cancelled', (s, id, b) => svc.cancel(o.db, s.actor, id, str(b.note) || undefined)));
+  app.post('/contents/:id/cancel', action('cancelled', async (s, id, b) => {
+    const d = await svc.getContent(o.db, s.actor, id);
+    if (d.item.state !== 'SCHEDULED') return svc.cancel(o.db, s.actor, id, str(b.note) || undefined);
+    // Bài đã hẹn trên Meta: phải xóa bên Meta trước khi hủy trong hệ thống.
+    if (!o.publisher) throw new AppError('CONFLICT', 'Chưa cấu hình Trang Meta nên không hủy được bài đã hẹn giờ');
+    return cancelScheduled(o.publisher, s.actor, id, str(b.note) || undefined);
+  }));
 
   // --- kiểm toán ---
   app.get('/audit', guarded(async (s, _req, reply) => html(reply, auditView(ctxOf(s), await svc.listAudit(o.db, s.actor)))));

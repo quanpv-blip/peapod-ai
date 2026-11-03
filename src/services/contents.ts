@@ -88,6 +88,12 @@ async function tx<T>(db: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promise
   }
 }
 
+/** Có lần đăng đang dở (ghi PENDING, chưa có kết quả): không được hủy hay sửa, để bài không lọt lên Meta sau khi đã hủy. */
+export async function hasPendingPublish(c: pg.PoolClient | pg.Pool, id: number): Promise<boolean> {
+  const r = await c.query("SELECT 1 FROM publish_attempt WHERE content_id = $1 AND ok = false AND error = 'PENDING' LIMIT 1", [id]);
+  return (r.rowCount ?? 0) > 0;
+}
+
 async function currentRevision(c: pg.PoolClient, item: ContentRow) {
   const r = await c.query('SELECT package, package_hash, edited_by FROM content_revision WHERE content_id = $1 AND revision = $2', [item.id, item.current_revision]);
   return r.rows[0] as { package: ContentPackage; package_hash: string; edited_by: string | null };
@@ -117,7 +123,10 @@ export async function saveEdit(db: pg.Pool, actor: Actor, id: number, baseRevisi
     const item = await lockItem(c, actor, id);
     if (!canReview(actor, item.market)) throw new AppError('FORBIDDEN', 'Bạn không có quyền sửa bài thuộc thị trường này');
     if (item.current_revision !== baseRevision) throw new AppError('CONFLICT', 'Bài đã được người khác sửa. Hãy tải lại trang.');
-    if (!['IN_REVIEW', 'APPROVED', 'SCHEDULED'].includes(item.state)) throw new AppError('CONFLICT', `Không thể sửa bài ở trạng thái ${item.state}`);
+    // Bài đã hẹn trên Meta: sửa sẽ không đổi được bài đã hẹn, nên phải hủy hẹn giờ trước (xem cancelScheduled).
+    if (item.state === 'SCHEDULED') throw new AppError('CONFLICT', 'Bài đã hẹn giờ trên Meta. Hủy hẹn giờ trước khi sửa nội dung.');
+    if (!['IN_REVIEW', 'APPROVED'].includes(item.state)) throw new AppError('CONFLICT', `Không thể sửa bài ở trạng thái ${item.state}`);
+    if (await hasPendingPublish(c, id)) throw new AppError('CONFLICT', 'Bài đang được đăng, thử lại sau');
 
     const cur = await currentRevision(c, item);
     const next: ContentPackage = { ...cur.package, post: { headline: input.headline.trim(), body: input.body.trim(), call_to_action: input.call_to_action.trim(), hashtags: input.hashtags } };
@@ -167,6 +176,7 @@ async function simpleTransition(db: pg.Pool, actor: Actor, id: number, to: State
     if (!allowed) throw new AppError('FORBIDDEN', 'Bạn không có quyền thực hiện thao tác này với bài thuộc thị trường này');
     if (needNote && !note?.trim()) throw new AppError('INVALID', 'Cần nhập ghi chú/lý do');
     if (!canTransition(item.state, to)) throw new AppError('CONFLICT', `Bài đang ở trạng thái ${item.state}, không thể chuyển sang ${to}`);
+    if (action === 'CANCEL' && (await hasPendingPublish(c, id))) throw new AppError('CONFLICT', 'Bài đang được đăng, không thể hủy lúc này');
     const cur = await currentRevision(c, item);
     await setState(c, item, to, to === 'CANCELLED' ? { scheduledAt: null } : {});
     await audit(c, item, item.current_revision, cur.package_hash, actor, action, note?.trim());

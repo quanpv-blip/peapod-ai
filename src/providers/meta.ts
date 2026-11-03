@@ -11,6 +11,8 @@ export interface MetaClient {
   get(pageToken: string, path: string, query?: Record<string, string>): Promise<JsonResponse>;
   /** Tạo bài văn bản. idempotent=false: không tự thử lại (FR-PUB-03). */
   postFeed(pageToken: string, pageId: string, body: { message: string; link?: string; published?: boolean; scheduled_publish_time?: number }): Promise<JsonResponse>;
+  /** Xóa một bài (kể cả bài hẹn giờ). Idempotent: xóa lại bài đã xóa không gây hại; lỗi được báo lên, không đoán. */
+  deletePost(pageToken: string, postId: string): Promise<JsonResponse>;
   reelsStart(pageToken: string, pageId: string): Promise<JsonResponse<{ video_id: string; upload_url: string }>>;
   /** Bước 2: máy chủ rupload dùng `Authorization: OAuth` (KHÔNG Bearer). */
   reelsUpload(pageToken: string, uploadUrl: string, filePath: string): Promise<JsonResponse>;
@@ -41,6 +43,8 @@ export function createMetaClient(env: NodeJS.ProcessEnv = process.env): MetaClie
     },
 
     postFeed: (pageToken, pageId, body) => requestJson(`${g}/${pageId}/feed`, { headers: bearer(pageToken), body, idempotent: false }),
+
+    deletePost: (pageToken, postId) => requestJson(`${g}/${postId}`, { method: 'DELETE', headers: bearer(pageToken), idempotent: true }),
 
     reelsStart: (pageToken, pageId) =>
       requestJson(`${g}/${pageId}/video_reels`, { headers: bearer(pageToken), body: { upload_phase: 'start' }, idempotent: false }),
