@@ -53,6 +53,8 @@ for (const f of readdirSync(dir).filter((n) => /^e2e-.*\.json$/.test(n))) {
 
 // --demo: bộ bài mẫu đủ trạng thái và lịch sử 7 ngày để xem giao diện. Tiêu đề gắn "[Mẫu]"; chỉ dùng cho local.
 if (process.argv.includes('--demo')) {
+  // Dữ liệu giả không bao giờ được vào môi trường thật (kiểm tra NODE_ENV, nợ kỹ thuật số 11).
+  if (process.env.NODE_ENV === 'production') throw new Error('--demo bị chặn khi NODE_ENV=production');
   const bases = readdirSync(dir).filter((n) => /^e2e-.*\.json$/.test(n)).map((n) => (JSON.parse(readFileSync(path.join(dir, n), 'utf8')) as { raw: ContentPackage }).raw);
   const H = 3_600_000;
   const plan: { st: string; ageH: number; schedH?: number; ev: [string, string, number][] }[] = [
