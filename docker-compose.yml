@@ -2,10 +2,17 @@
 # Production:   docker compose --profile prod up -d --build   (thêm Caddy/TLS; đặt APP_DOMAIN trong .env)
 # Bí mật nằm trong .env (không commit). Mẫu: .env.example.
 
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 x-app: &app
   build: .
   image: peapod-ai:local
   restart: unless-stopped
+  logging: *logs
   env_file: .env
   environment:
     DATABASE_URL: postgres://app:${POSTGRES_PASSWORD:?đặt POSTGRES_PASSWORD trong .env}@postgres:5432/peapod

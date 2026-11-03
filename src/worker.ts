@@ -12,6 +12,7 @@ import { pagesFromEnv } from './services/publish.ts';
 import { fetchFeeds, generateTopic } from './services/generate.ts';
 import { handleUpdate, parseAllowlist, type BotDeps } from './services/telegramBot.ts';
 import { pollTelegram } from './jobs/telegramPoll.ts';
+import { cleanupMedia } from './services/media.ts';
 
 // Worker: hàng đợi pg-boss (ADR-03) giữ lại cho các job sau này; chu kỳ nền chạy theo nhịp, có khóa tư vấn để một lúc chỉ một tiến trình chạy.
 const cfg = loadBaseConfig();
@@ -74,6 +75,18 @@ async function tick(): Promise<void> {
 }
 
 const timer = setInterval(() => void tick(), everyMs);
+
+// Dọn media của bài đã đăng sau MEDIA_RETENTION_DAYS (FR-ADM-02), chạy lúc khởi động rồi mỗi 6 giờ.
+const retentionDays = Number(process.env.MEDIA_RETENTION_DAYS ?? 7);
+const mediaDir = process.env.MEDIA_DIR ?? './media';
+const runCleanup = () =>
+  cleanupMedia(pool, mediaDir, retentionDays)
+    .then((r) => {
+      if (r.deleted || r.skipped) console.log(JSON.stringify({ level: 'info', msg: 'media cleanup', ...r }));
+    })
+    .catch((e: Error) => console.error(JSON.stringify({ level: 'error', msg: 'media cleanup failed', error: e.message.slice(0, 300) })));
+const cleanTimer = setInterval(() => void runCleanup(), 6 * 3_600_000);
+setTimeout(() => void runCleanup(), 60_000);
 void tick();
 console.log(JSON.stringify({ level: 'info', msg: 'worker started', everyMinutes: everyMs / 60_000, publisher: !!deps.publisher, generator: !!deps.generator }));
 
@@ -101,6 +114,7 @@ if (tgToken) {
 const stop = async () => {
   stopping = true;
   clearInterval(timer);
+  clearInterval(cleanTimer);
   await boss.stop({ graceful: true });
   await pool.end();
   process.exit(0);
