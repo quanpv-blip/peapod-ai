@@ -43,9 +43,19 @@ export interface ServiceOptions {
 
 const DEFAULTS: ServiceOptions = { fourEyesMarkets: ['JP'] };
 
-export async function listContents(db: pg.Pool, actor: Actor, filter: { state?: string; market?: string; q?: string } = {}): Promise<ContentRow[]> {
+export interface ContentFilter {
+  state?: string;
+  market?: string;
+  q?: string;
+  /** Phân trang: số dòng và vị trí bắt đầu. Mặc định 200 dòng đầu. */
+  limit?: number;
+  offset?: number;
+}
+
+/** Điều kiện lọc hàng chờ theo quyền người xem; null nếu người xem không có thị trường nào. */
+function contentWhere(actor: Actor, filter: ContentFilter): { where: string; params: unknown[] } | null {
   const markets = visibleMarkets(actor);
-  if (markets.length === 0) return [];
+  if (markets.length === 0) return null;
   const params: unknown[] = [markets];
   let where = 'market = ANY($1)';
   if (filter.state) { params.push(filter.state); where += ` AND state = $${params.length}`; }
@@ -56,8 +66,25 @@ export async function listContents(db: pg.Pool, actor: Actor, filter: { state?: 
     params.push(`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
     where += ` AND id IN (SELECT r.content_id FROM content_revision r JOIN content_item i ON i.id = r.content_id AND i.current_revision = r.revision WHERE r.package->'post'->>'headline' ILIKE $${params.length})`;
   }
-  const r = await db.query<ContentRow>(`SELECT * FROM content_item WHERE ${where} ORDER BY (state='IN_REVIEW') DESC, updated_at DESC LIMIT 200`, params);
+  return { where, params };
+}
+
+export async function listContents(db: pg.Pool, actor: Actor, filter: ContentFilter = {}): Promise<ContentRow[]> {
+  const c = contentWhere(actor, filter);
+  if (!c) return [];
+  const limit = Math.max(1, Math.min(filter.limit ?? 200, 500));
+  const offset = Math.max(0, filter.offset ?? 0);
+  const r = await db.query<ContentRow>(
+    `SELECT * FROM content_item WHERE ${c.where} ORDER BY (state='IN_REVIEW') DESC, updated_at DESC LIMIT ${limit} OFFSET ${offset}`, c.params);
   return r.rows;
+}
+
+/** Tổng số bài khớp bộ lọc, để tính số trang. */
+export async function countContents(db: pg.Pool, actor: Actor, filter: ContentFilter = {}): Promise<number> {
+  const c = contentWhere(actor, filter);
+  if (!c) return 0;
+  const r = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM content_item WHERE ${c.where}`, c.params);
+  return r.rows[0]!.n;
 }
 
 export async function getContent(db: pg.Pool | pg.PoolClient, actor: Actor, id: number): Promise<ContentDetail> {
@@ -193,13 +220,19 @@ export const requestChanges = (db: pg.Pool, a: Actor, id: number, note: string) 
 export const reject = (db: pg.Pool, a: Actor, id: number, reason: string) => simpleTransition(db, a, id, 'REJECTED', 'REJECT', reason, true);
 export const cancel = (db: pg.Pool, a: Actor, id: number, note?: string) => simpleTransition(db, a, id, 'CANCELLED', 'CANCEL', note, false);
 
-export async function listAudit(db: pg.Pool, actor: Actor, limit = 100) {
+export async function listAudit(db: pg.Pool, actor: Actor, limit = 100, offset = 0) {
   const markets = visibleMarkets(actor);
   const r = await db.query(
     `SELECT e.id, e.content_id, e.revision, e.action, e.actor, e.note, e.created_at, c.market
        FROM approval_event e JOIN content_item c ON c.id = e.content_id
-      WHERE c.market = ANY($1) ORDER BY e.id DESC LIMIT $2`, [markets, limit]);
+      WHERE c.market = ANY($1) ORDER BY e.id DESC LIMIT $2 OFFSET $3`, [markets, limit, offset]);
   return r.rows as { id: number; content_id: number; revision: number; action: string; actor: string; note: string | null; created_at: Date; market: Market }[];
+}
+
+export async function countAudit(db: pg.Pool, actor: Actor): Promise<number> {
+  const r = await db.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM approval_event e JOIN content_item c ON c.id = e.content_id WHERE c.market = ANY($1)', [visibleMarkets(actor)]);
+  return r.rows[0]!.n;
 }
 
 /** Ghi một gói do AI sinh vào hàng chờ (IN_REVIEW, revision 1, không có người sửa). Chỉ dùng từ tiến trình nền. */

@@ -15,6 +15,7 @@ import { getAppSettings, saveAppSettings } from '../services/appSettings.ts';
 import { costSummary } from '../services/costs.ts';
 import { changeOwnPassword } from '../services/account.ts';
 import { diffPackages } from '../domain/diff.ts';
+import { pageInfo, PAGE_SIZE } from '../domain/paging.ts';
 import { notifySlack } from '../providers/slack.ts';
 import { readFile } from 'node:fs/promises';
 import { settingsPage } from './views/settings.ts';
@@ -197,7 +198,8 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   // --- hàng chờ ---
   async function renderQueue(s: Session, reply: FastifyReply, query: Record<string, unknown>, flash?: Flash) {
     const filter = { state: str(query.state), market: str(query.market), q: str(query.q) };
-    const rows = await svc.listContents(o.db, s.actor, filter);
+    const page = pageInfo(query.page, await svc.countContents(o.db, s.actor, filter), PAGE_SIZE);
+    const rows = await svc.listContents(o.db, s.actor, { ...filter, limit: page.size, offset: page.offset });
     const info = new Map<string, RowInfo>();
     if (rows.length) {
       const t = await o.db.query<{ content_id: string; headline: string; claims: number; sources: number; edited_by: string | null }>(
@@ -211,7 +213,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     const counts = (await getStats(o.db, s.actor)).byState;
     const markets = visibleMarkets(s.actor);
     return html(reply, queueView({
-      ctx: ctxOf(s), rows, info, counts, now: new Date(), filter, markets, flash,
+      ctx: ctxOf(s), rows, info, counts, now: new Date(), filter, page, markets, flash,
       canGenerate: !!o.generator && markets.some((m) => canReview(s.actor, m)),
       canPublish: !!o.publisher && isApprover(s.actor),
     }));
@@ -465,8 +467,8 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   }));
 
   // --- chi phí AI (quản trị viên) ---
-  app.get('/costs', adminOnly(async (s, _req, reply) => {
-    const [sum, settings] = await Promise.all([costSummary(o.db), getAppSettings(o.db)]);
+  app.get('/costs', adminOnly(async (s, req, reply) => {
+    const [sum, settings] = await Promise.all([costSummary(o.db, new Date(), (req.query as Record<string, unknown>).page), getAppSettings(o.db)]);
     return html(reply, costsPage(ctxOf(s), { sum, settings }));
   }));
 
@@ -528,7 +530,10 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   }));
 
   // --- kiểm toán ---
-  app.get('/audit', guarded(async (s, _req, reply) => html(reply, auditView(ctxOf(s), await svc.listAudit(o.db, s.actor)))));
+  app.get('/audit', guarded(async (s, req, reply) => {
+    const page = pageInfo((req.query as Record<string, unknown>).page, await svc.countAudit(o.db, s.actor), 50);
+    return html(reply, auditView(ctxOf(s), await svc.listAudit(o.db, s.actor, page.size, page.offset), page));
+  }));
 }
 
 function notFound(_s: unknown): string {

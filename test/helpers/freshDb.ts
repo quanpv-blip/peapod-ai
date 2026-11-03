@@ -11,6 +11,9 @@ export async function freshDb(baseUrl: string, migrations: string[]): Promise<{ 
   const u = new URL(baseUrl);
   u.pathname = `/${name}`;
   const db = new pg.Pool({ connectionString: u.toString(), max: 4 });
+  // Client nhàn rỗi có thể bị máy chủ ngắt khi DROP ... FORCE chạy ở cuối bộ test; không có listener thì thành lỗi không bắt được.
+  db.on('error', () => {});
+  admin.on('error', () => {});
   for (const f of migrations) {
     await db.query(readFileSync(new URL(`../../db/migrations/${f}`, import.meta.url), 'utf8'));
   }

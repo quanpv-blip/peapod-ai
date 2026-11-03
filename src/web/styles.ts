@@ -198,6 +198,8 @@ label{display:block;font-weight:600;font-size:13px;margin:0 0 6px;color:var(--in
 .field{margin-bottom:16px;min-width:0}
 .field.full,.form-grid .field.full,.form-grid .savebar,.savebar{grid-column:1/-1}
 .hint{font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.pager{display:flex;align-items:center;justify-content:center;gap:14px;margin:18px 0 8px;flex-wrap:wrap}
+.pager .btn[aria-disabled="true"]{opacity:.45;pointer-events:none}
 .tag.bad-tag{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,transparent);background:var(--bad-soft);margin-left:6px}
 .verdicts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
 .verdict{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;border-left:4px solid var(--ink-4)}
@@ -219,7 +221,7 @@ label{display:block;font-weight:600;font-size:13px;margin:0 0 6px;color:var(--in
 .slot .h a{color:var(--ink);font-weight:550}
 .slot .h a:hover{color:var(--brand)}
 @media (max-width:760px){.verdicts{grid-template-columns:1fr}.slot{grid-template-columns:1fr;gap:6px}.slot .h{white-space:normal}}
-input[type=text],input[type=email],input[type=password],input[type=datetime-local],input[type=number],input[type=time],input[type=url],input[type=search],textarea,select{width:100%;height:38px;padding:0 12px;border:1px solid var(--line-2);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;transition:border-color .15s,box-shadow .15s;appearance:auto}
+input[type=text],input[type=email],input[type=password],input[type=datetime-local],input[type=date],input[type=number],input[type=time],input[type=url],input[type=search],textarea,select{width:100%;height:38px;padding:0 12px;border:1px solid var(--line-2);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;transition:border-color .15s,box-shadow .15s;appearance:auto}
 textarea{height:auto;padding:10px 12px;min-height:96px;resize:vertical;line-height:1.6}
 textarea.tall{min-height:260px}
 select{padding-right:8px}

@@ -2,6 +2,7 @@
 import type pg from 'pg';
 import type { AppSettings } from '../domain/appSettings.ts';
 import type { Market } from '../domain/package.ts';
+import { pageInfo, type Page } from '../domain/paging.ts';
 
 export interface Usage {
   inputTokens: number;
@@ -50,11 +51,14 @@ export interface CostSummary {
   byModel: { model: string; calls: number; tokensIn: number; tokensOut: number; costUsd: number }[];
   byDay: { day: string; costUsd: number; calls: number }[];
   recent: { created_at: Date; market: Market; purpose: string; model: string; tokens_in: number; tokens_out: number; cost_usd: number }[];
+  recentPage: Page;
 }
 
-export async function costSummary(db: pg.Pool, now = new Date()): Promise<CostSummary> {
+export async function costSummary(db: pg.Pool, now = new Date(), requestedPage: unknown = 1): Promise<CostSummary> {
   const { day, month } = ictStart(now);
   const since30 = new Date(now.getTime() - 30 * 86_400_000);
+  const total = Number((await db.query<{ n: number }>('SELECT count(*)::int AS n FROM ai_usage')).rows[0]!.n);
+  const recentPage = pageInfo(requestedPage, total);
   const [todayUsd, monthUsd, byModel, byDay, recent] = await Promise.all([
     spendSince(db, day),
     spendSince(db, month),
@@ -65,7 +69,7 @@ export async function costSummary(db: pg.Pool, now = new Date()): Promise<CostSu
       `SELECT to_char((created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date, 'YYYY-MM-DD') AS day, COALESCE(SUM(cost_usd),0)::text AS c, count(*)::text AS calls
          FROM ai_usage WHERE created_at >= $1 GROUP BY 1 ORDER BY 1 DESC`, [since30]),
     db.query<{ created_at: Date; market: Market; purpose: string; model: string; tokens_in: number; tokens_out: number; cost_usd: string }>(
-      'SELECT created_at, market, purpose, model, tokens_in, tokens_out, cost_usd FROM ai_usage ORDER BY id DESC LIMIT 20'),
+      'SELECT created_at, market, purpose, model, tokens_in, tokens_out, cost_usd FROM ai_usage ORDER BY id DESC LIMIT $1 OFFSET $2', [recentPage.size, recentPage.offset]),
   ]);
   return {
     todayUsd,
@@ -73,5 +77,6 @@ export async function costSummary(db: pg.Pool, now = new Date()): Promise<CostSu
     byModel: byModel.rows.map((r) => ({ model: r.model, calls: Number(r.calls), tokensIn: Number(r.ti), tokensOut: Number(r.to_), costUsd: Number(r.c) })),
     byDay: byDay.rows.map((r) => ({ day: r.day, costUsd: Number(r.c), calls: Number(r.calls) })),
     recent: recent.rows.map((r) => ({ ...r, cost_usd: Number(r.cost_usd) })),
+    recentPage,
   };
 }

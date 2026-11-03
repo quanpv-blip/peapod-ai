@@ -1,4 +1,5 @@
 import type { Market } from '../domain/package.ts';
+import type { Page } from '../domain/paging.ts';
 import { html, type Safe } from './html.ts';
 
 export const STATE: Record<string, { text: string; tone: '' | 'ok' | 'warn' | 'bad' | 'info' }> = {
@@ -48,6 +49,15 @@ export function when(d: Date | string | null | undefined, market: Market): strin
 }
 
 export const zoneLabel = (m: Market) => ZONE[m].label;
+
+/** Thanh phân trang dùng chung; ẩn khi chỉ có một trang. `href(n)` tạo đường dẫn tới trang n. */
+export const pager = (p: Page, href: (n: number) => string): Safe => p.pages <= 1
+  ? html``
+  : html`<nav class="pager" aria-label="Phân trang">
+      ${p.page > 1 ? html`<a class="btn" href="${href(p.page - 1)}">‹ Trước</a>` : html`<span class="btn" aria-disabled="true">‹ Trước</span>`}
+      <span class="small muted">Trang ${p.page} / ${p.pages} · ${p.total} mục</span>
+      ${p.page < p.pages ? html`<a class="btn" href="${href(p.page + 1)}">Sau ›</a>` : html`<span class="btn" aria-disabled="true">Sau ›</span>`}
+    </nav>`;
 
 /** Khoảng thời gian dạng ngắn: "12 phút", "5 giờ", "2 ngày". */
 export function span(ms: number | null): string {

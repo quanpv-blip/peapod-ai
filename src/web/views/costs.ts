@@ -1,5 +1,6 @@
 import type { AppSettings } from '../../domain/appSettings.ts';
 import type { CostSummary } from '../../services/costs.ts';
+import { pager } from '../components.ts';
 import { empty, html } from '../html.ts';
 import { page, type PageCtx } from '../layout.ts';
 
@@ -30,31 +31,37 @@ export function costsPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: { sum: CostSum
           <div class="kpi-s">USD mỗi triệu token (vào / ra)</div></div>
       </div>
 
-      <div class="cols">
-        <div>
-          <section class="panel"><div class="panel-h">Chi phí 30 ngày gần nhất</div><div class="panel-b">
+      <section class="panel"><div class="panel-h">Chi phí 30 ngày gần nhất</div><div class="panel-b">
             ${sum.byDay.length
               ? html`<div class="daybars">${sum.byDay.slice().reverse().map((d) => html`<div class="dayb" title="${d.day}: ${usd(d.costUsd)}, ${d.calls} lượt">
                   <div class="dayb-col"><span class="h${Math.max(2, Math.round((d.costUsd / maxDay) * 100))}"></span></div>
                   <div class="dayb-l">${d.day.slice(8)}</div></div>`)}</div>`
               : html`<div class="empty">Chưa có lượt gọi AI nào.</div>`}
           </div></section>
-          <section class="panel"><div class="panel-h">Theo mô hình (tháng này)</div><div class="panel-b">
+
+      <section class="panel"><div class="panel-h">Theo mô hình (tháng này)</div><div class="panel-b">
             ${sum.byModel.length
               ? html`<div class="table-wrap"><table><thead><tr><th>Mô hình</th><th>Lượt</th><th>Token vào</th><th>Token ra</th><th>Chi phí</th></tr></thead>
-                  <tbody>${sum.byModel.map((m) => html`<tr><td class="mono">${m.model}</td><td>${m.calls}</td><td>${m.tokensIn.toLocaleString('vi-VN')}</td><td>${m.tokensOut.toLocaleString('vi-VN')}</td><td>${usd(m.costUsd)}</td></tr>`)}</tbody></table></div>`
+                  <tbody>${sum.byModel.map((m) => html`<tr><td class="mono">${m.model}</td><td>${m.calls}</td><td>${m.tokensIn.toLocaleString('vi-VN')}</td><td>${m.tokensOut.toLocaleString('vi-VN')}</td><td class="nowrap">${usd(m.costUsd)}</td></tr>`)}</tbody></table></div>`
               : html`<div class="empty">Chưa có dữ liệu.</div>`}
           </div></section>
-        </div>
-        <aside>
-          <section class="panel"><div class="panel-h">Lượt gọi gần đây</div><div class="panel-b">
-            ${sum.recent.length
-              ? html`<ul class="list">${sum.recent.map((r) => html`<li><div class="when">${r.created_at.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
-                  <div class="what"><span>${r.market} · ${r.purpose === 'CAMPAIGN' ? 'chiến dịch' : 'tin ngành'}</span><span class="muted small mono">${r.model} · ${r.tokens_in}→${r.tokens_out} · ${usd(r.cost_usd)}</span></div></li>`)}</ul>`
-              : html`<div class="empty">Chưa có lượt gọi.</div>`}
-          </div></section>
-        </aside>
-      </div>
+
+      <section class="panel"><div class="panel-h">Lượt gọi AI gần đây<span class="small muted">${sum.recentPage.total} lượt</span></div>
+        ${sum.recent.length
+          ? html`<div class="table-wrap"><table>
+              <thead><tr><th>Thời điểm (ICT)</th><th>Thị trường</th><th>Mục đích</th><th>Mô hình</th><th class="right">Token vào</th><th class="right">Token ra</th><th class="right">Chi phí</th></tr></thead>
+              <tbody>${sum.recent.map((r) => html`<tr>
+                <td class="nowrap">${r.created_at.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</td>
+                <td>${r.market}</td>
+                <td>${r.purpose === 'CAMPAIGN' ? 'Chiến dịch' : 'Tin ngành'}</td>
+                <td class="mono">${r.model}</td>
+                <td class="right">${r.tokens_in.toLocaleString('vi-VN')}</td>
+                <td class="right">${r.tokens_out.toLocaleString('vi-VN')}</td>
+                <td class="right nowrap">${usd(r.cost_usd)}</td>
+              </tr>`)}</tbody></table></div>
+            ${pager(sum.recentPage, (n) => `/costs?page=${n}`)}`
+          : html`<div class="empty">Chưa có lượt gọi.</div>`}
+      </section>
     </div>`,
   );
 }

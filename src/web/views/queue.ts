@@ -1,6 +1,7 @@
 import type { ContentRow } from '../../services/contents.ts';
+import type { Page } from '../../domain/paging.ts';
 import { OVERDUE_HOURS } from '../../services/stats.ts';
-import { FORMAT, marketTag, span, status, when } from '../components.ts';
+import { FORMAT, marketTag, pager, span, status, when } from '../components.ts';
 import { empty, html, type Safe } from '../html.ts';
 import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
 
@@ -18,6 +19,8 @@ export interface QueueView {
   /** Số bài theo trạng thái trong phạm vi quyền của người dùng (hiện trên các tab lọc). */
   counts: Record<string, number>;
   filter: { state: string; market: string; q: string };
+  /** Trang hiện tại của danh sách (đã lọc theo quyền và bộ lọc). */
+  page: Page;
   markets: string[];
   now: Date;
   flash?: Flash;
@@ -39,11 +42,12 @@ const STATE_FILTERS: [string, string][] = [
   ['FAILED_PUBLISH', 'Lỗi đăng'],
 ];
 
-function link(state: string, market: string, q = ''): string {
+function link(state: string, market: string, q = '', page = 1): string {
   const p = new URLSearchParams();
   if (state) p.set('state', state);
   if (market) p.set('market', market);
   if (q) p.set('q', q);
+  if (page > 1) p.set('page', String(page));
   const s = p.toString();
   return s ? `/queue?${s}` : '/queue';
 }
@@ -100,11 +104,12 @@ export function queueView(v: QueueView): string {
   return page(
     { ...v.ctx, title: 'Hàng chờ duyệt', nav: 'queue' },
     html`<div class="page">
-      <div class="page-head"><div><h1>Hàng chờ duyệt</h1><div class="sub">Xem, chỉnh sửa và duyệt nội dung trước khi đăng</div></div><span class="muted">${v.rows.length} bài hiển thị</span></div>
+      <div class="page-head"><div><h1>Hàng chờ duyệt</h1><div class="sub">Xem, chỉnh sửa và duyệt nội dung trước khi đăng</div></div><span class="muted">${v.page.total} bài khớp bộ lọc</span></div>
       ${flashBox(v.flash)}
       <div class="toolbar">${search}<span class="sep"></span>${generate}${publish}</div>
       <div class="filters"><div class="seg">${tabs}</div>${markets}</div>
       ${body}
+      ${pager(v.page, (n) => link(v.filter.state, v.filter.market, v.filter.q, n))}
     </div>`,
   );
 }
