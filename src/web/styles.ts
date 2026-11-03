@@ -267,7 +267,20 @@ details[open].more>summary::before{content:"▾ "}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 .secret{background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);border-radius:var(--radius);padding:14px 16px;margin:0 0 18px}
 .secret code{font-family:"JetBrains Mono",Consolas,monospace;font-size:14px;background:var(--surface);padding:3px 9px;border:1px solid var(--line);border-radius:6px;user-select:all}
-.tbl-act{display:flex;gap:6px;flex-wrap:wrap}
+.tbl-act{display:flex;gap:6px;justify-content:flex-end;flex-wrap:nowrap;align-items:center}
+.btn{white-space:nowrap}
+.right{text-align:right}
+.nowrap{white-space:nowrap}
+.strong{font-weight:600;color:var(--ink)}
+table.users td{vertical-align:middle}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.chip-check{position:relative;display:inline-flex;align-items:center;margin:0;cursor:pointer;font-weight:550;color:var(--ink-2)}
+.chip-check input{position:absolute;opacity:0;width:0;height:0}
+.chip-check span{padding:7px 14px;border:1px solid var(--line-2);border-radius:999px;background:var(--surface);font-size:13px;transition:all .15s}
+.chip-check:hover span{border-color:var(--ink-4)}
+.chip-check input:checked+span{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
+.chip-check input:focus-visible+span{box-shadow:var(--ring)}
 .inline{display:inline}.inline form{display:inline}
 
 /* xem trước bài đăng (giống Facebook) */
