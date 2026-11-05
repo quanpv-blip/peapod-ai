@@ -1,4 +1,5 @@
 import { languageMatchesMarket } from '../../domain/package.ts';
+import { GRADE_TEXT, scoreQuality } from '../../domain/quality.ts';
 import type { ContentDetail } from '../../services/contents.ts';
 import { ACTION, FORMAT, marketTag, status, when, zoneLabel } from '../components.ts';
 import { empty, html, type Safe } from '../html.ts';
@@ -76,6 +77,12 @@ export function detailView(v: DetailView): string {
 ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span></div>
     ${mediaCard(d)}
   </div>`;
+
+  const q = scoreQuality(p, it.market);
+  const quality = html`<div class="panel"><div class="panel-h">Chất lượng bản nháp <span class="qchip q-${q.grade}">${q.score}/100 · ${GRADE_TEXT[q.grade]}</span></div><div class="panel-b">
+    ${q.issues.length ? html`<ul class="q-list">${q.issues.map((i) => html`<li class="${i.level}">${i.text}</li>`)}</ul>` : html`<span class="muted small">Không phát hiện vấn đề theo quy tắc biên tập.</span>`}
+    <p class="hint">Điểm chấm theo quy tắc biên tập (độ dài, cấu trúc, từ cấm, nguồn, khẳng định cần kiểm).</p>
+  </div></div>`;
 
   const lang = languageMatchesMarket(p.post.body, it.market);
   const checks = html`<ul class="checks">
@@ -172,7 +179,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
           ${reelPanel(v)}
           ${diffPanel(v.changes)}${sources}${editForm}
         </div>
-        <aside>${decision}${publishBox}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
+        <aside>${decision}${publishBox}${quality}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
       </div>
     </div>`,
   );

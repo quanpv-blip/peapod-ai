@@ -121,7 +121,7 @@ export function page(ctx: PageCtx, body: Safe): string {
 
   return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>${esc(ctx.title)} · PeaPod AI</title>
-<link rel="icon" type="image/svg+xml" href="/assets/logo.svg"><link rel="stylesheet" href="/assets/app.css?v=${CSS_VERSION}"><script src="/assets/theme.js"></script><script src="/assets/reel.js" defer></script></head>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg"><link rel="stylesheet" href="/assets/app.css?v=${CSS_VERSION}"><script src="/assets/theme.js"></script><script src="/assets/reel.js" defer></script><script src="/assets/ui.js" defer></script></head>
 <body>${shell.html}</body></html>`;
 }
 

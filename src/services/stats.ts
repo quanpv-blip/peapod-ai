@@ -11,6 +11,8 @@ export interface Stats {
   /** Tỷ lệ duyệt trong 7 ngày: APPROVE / (APPROVE + REJECT + REQUEST_CHANGES). null nếu chưa có quyết định. */
   approvalRate: number | null;
   decisions7d: number;
+  /** Hiệu quả AI trong 30 ngày: chi phí, số bài tạo/duyệt/đăng, thời gian từ lúc tạo tới lúc duyệt, số video. */
+  ai: { spendUsd: number; created: number; approved: number; published: number; costPerApprovedUsd: number | null; avgHoursToApprove: number | null; videos: number; passRate: number | null };
   upcoming: { id: number; market: Market; scheduled_at: Date; headline: string; state: string }[];
 }
 
@@ -22,10 +24,11 @@ const dayKey = (t: number) => new Date(t + ICT).toISOString().slice(0, 10);
 
 export async function getStats(db: pg.Pool, actor: Actor, now = new Date()): Promise<Stats> {
   const markets = visibleMarkets(actor);
-  const empty: Stats = { byState: {}, byMarket: { VN: {}, JP: {} }, pending: { count: 0, oldestWaitMs: null, avgWaitMs: null, overdue: 0 }, daily: [], approvalRate: null, decisions7d: 0, upcoming: [] };
+  const empty: Stats = { byState: {}, byMarket: { VN: {}, JP: {} }, pending: { count: 0, oldestWaitMs: null, avgWaitMs: null, overdue: 0 }, daily: [], approvalRate: null, decisions7d: 0, ai: { spendUsd: 0, created: 0, approved: 0, published: 0, costPerApprovedUsd: null, avgHoursToApprove: null, videos: 0, passRate: null }, upcoming: [] };
   if (markets.length === 0) return empty;
 
-  const [cnt, wait, act, up] = await Promise.all([
+  const since30 = new Date(now.getTime() - 30 * DAY);
+  const [cnt, wait, act, up, aiq] = await Promise.all([
     db.query('SELECT market, state, count(*)::int AS n FROM content_item WHERE market = ANY($1) GROUP BY 1,2', [markets]),
     db.query("SELECT updated_at FROM content_item WHERE state = 'IN_REVIEW' AND market = ANY($1)", [markets]),
     db.query(
@@ -37,6 +40,16 @@ export async function getStats(db: pg.Pool, actor: Actor, now = new Date()): Pro
          FROM content_item i JOIN content_revision r ON r.content_id = i.id AND r.revision = i.current_revision
         WHERE i.market = ANY($1) AND i.state IN ('APPROVED','SCHEDULED') AND i.scheduled_at >= $2
         ORDER BY i.scheduled_at LIMIT 6`, [markets, now]),
+    db.query(
+      `SELECT
+         (SELECT COALESCE(SUM(cost_usd),0)::float8 FROM ai_usage WHERE market = ANY($1) AND created_at >= $2) AS spend,
+         (SELECT count(*)::int FROM content_item WHERE market = ANY($1) AND created_at >= $2) AS created,
+         (SELECT count(DISTINCT e.content_id)::int FROM approval_event e JOIN content_item c ON c.id = e.content_id WHERE c.market = ANY($1) AND e.action = 'APPROVE' AND e.created_at >= $2) AS approved,
+         (SELECT count(*)::int FROM content_item WHERE market = ANY($1) AND state = 'PUBLISHED' AND updated_at >= $2) AS published,
+         (SELECT (AVG(EXTRACT(EPOCH FROM (a.t - c.created_at))) / 3600)::float8
+            FROM content_item c JOIN LATERAL (SELECT min(created_at) AS t FROM approval_event WHERE content_id = c.id AND action = 'APPROVE') a ON a.t IS NOT NULL
+           WHERE c.market = ANY($1) AND c.created_at >= $2) AS hours,
+         (SELECT count(DISTINCT m.content_id)::int FROM media_asset m JOIN content_item c ON c.id = m.content_id WHERE c.market = ANY($1) AND m.kind = 'VIDEO_FINAL') AS videos`, [markets, since30]),
   ]);
 
   const s = empty;
@@ -71,6 +84,19 @@ export async function getStats(db: pg.Pool, actor: Actor, now = new Date()): Pro
   }
   s.decisions7d = dec;
   s.approvalRate = dec ? ap / dec : null;
+  const a = aiq.rows[0] ?? {};
+  const approved = Number(a.approved ?? 0);
+  const created = Number(a.created ?? 0);
+  s.ai = {
+    spendUsd: Number(a.spend ?? 0),
+    created,
+    approved,
+    published: Number(a.published ?? 0),
+    costPerApprovedUsd: approved ? Number(a.spend ?? 0) / approved : null,
+    avgHoursToApprove: a.hours === null || a.hours === undefined ? null : Number(a.hours),
+    videos: Number(a.videos ?? 0),
+    passRate: created ? Math.min(1, approved / created) : null,
+  };
   s.upcoming = up.rows.map((r) => ({ id: Number(r.id), market: r.market, scheduled_at: r.scheduled_at, headline: r.headline, state: r.state }));
   return s;
 }

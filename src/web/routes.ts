@@ -2,7 +2,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { canCancel, canReview, checkCsrf, csrfToken, verifyPassword, signSession, verifySession, visibleMarkets, type Actor, type Role } from '../auth.ts';
 import { fromLocalInput, nextBusinessSlot, DEFAULT_LOCAL_TIME, toLocalInput } from '../domain/schedule.ts';
-import type { Market } from '../domain/package.ts';
+import type { ContentPackage, Market } from '../domain/package.ts';
+import { bulkApprovable, scoreQuality } from '../domain/quality.ts';
+import { planSlots } from '../domain/bulk.ts';
+import { GenJobs } from '../services/genJobs.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import * as svc from '../services/contents.ts';
 import { AppError, type ContentRow } from '../services/contents.ts';
@@ -21,6 +24,7 @@ import { makeReelRemote, remoteCardConfigFromEnv } from '../media/remote-card.ts
 import { cancelReel, latestReelPath, reelStatus, startReelJob } from '../services/reels.ts';
 import { reelView } from '../domain/reel.ts';
 import { REEL_JS } from './reel-js.ts';
+import { UI_JS } from './ui-js.ts';
 import { readFile } from 'node:fs/promises';
 import { settingsPage } from './views/settings.ts';
 import { costsPage } from './views/costs.ts';
@@ -74,6 +78,7 @@ const OK_MESSAGES: Record<string, string> = {
   'reel-off': 'Chưa bật dịch vụ Remotion (REMOTION_RENDER_URL) nên không dựng được video.',
   'reel-failed': 'Không bắt đầu được việc dựng video. Xem lý do trong khung đỏ trên trang bài.',
   'reel-cancelled': 'Đã hủy việc dựng video.',
+  'gen-started': 'Đã bắt đầu tạo bản tin. Tiến độ hiện ngay trên trang, bài mới sẽ xuất hiện trong hàng chờ.',
 };
 
 // Giới hạn thử đăng nhập: 5 lần sai / 15 phút cho mỗi (IP + email). Bộ nhớ trong đủ cho một tiến trình duy nhất.
@@ -110,6 +115,7 @@ const isAdmin = (a: Actor) => a.roles.includes('admin');
 
 export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<void> {
   const secret = o.sessionSecret;
+  const genJobs = new GenJobs();
   const svcOpts = { fourEyesMarkets: o.fourEyesMarkets ?? (['JP'] as Market[]) };
 
   // Lỗi bất ngờ: trang HTML thân thiện thay cho JSON 500; chi tiết chỉ ghi vào nhật ký máy chủ.
@@ -140,6 +146,8 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   app.get('/assets/side-bg.svg', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/svg+xml; charset=utf-8').send(SIDE_BG_SVG));
   app.get('/assets/theme.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(THEME_JS));
   app.get('/assets/reel.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(REEL_JS));
+
+  app.get('/assets/ui.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(UI_JS));
 
   interface Session { actor: Actor; sid: string; csrf: string; pending: number; paused: boolean }
 
@@ -231,13 +239,15 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     const rows = await svc.listContents(o.db, s.actor, { ...filter, limit: page.size, offset: page.offset });
     const info = new Map<string, RowInfo>();
     if (rows.length) {
-      const t = await o.db.query<{ content_id: string; headline: string; claims: number; sources: number; edited_by: string | null }>(
-        `SELECT r.content_id, r.package->'post'->>'headline' AS headline,
-                jsonb_array_length(r.package->'claims_to_verify') AS claims,
-                jsonb_array_length(r.package->'sources') AS sources, r.edited_by
+      const t = await o.db.query<{ content_id: string; market: Market; package: ContentPackage; edited_by: string | null }>(
+        `SELECT r.content_id, i.market, r.package, r.edited_by
            FROM content_revision r JOIN content_item i ON i.id = r.content_id AND i.current_revision = r.revision
           WHERE r.content_id = ANY($1)`, [rows.map((r) => r.id)]);
-      for (const x of t.rows) info.set(String(x.content_id), { headline: x.headline, claims: x.claims, sources: x.sources, editedBy: x.edited_by });
+      for (const x of t.rows) {
+        const q = scoreQuality(x.package, x.market);
+        const claims = x.package.claims_to_verify.length;
+        info.set(String(x.content_id), { headline: x.package.post.headline, claims, sources: x.package.sources.length, editedBy: x.edited_by, quality: q, bulkOk: bulkApprovable(q, claims) });
+      }
     }
     const counts = (await getStats(o.db, s.actor)).byState;
     const markets = visibleMarkets(s.actor);
@@ -245,6 +255,8 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
       ctx: ctxOf(s), rows, info, counts, now: new Date(), filter, page, markets, flash,
       canGenerate: !!o.generator && markets.some((m) => canReview(s.actor, m)),
       canPublish: !!o.publisher && isApprover(s.actor),
+      genJobs: genJobs.recent(markets),
+      canBulk: markets.some((m) => canReview(s.actor, m)),
     }));
   }
 
@@ -254,21 +266,63 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     return renderQueue(s, reply, q, okMsg ? { kind: 'ok', text: okMsg } : undefined);
   }));
 
+  // Tạo bản tin chạy nền: trả về ngay, tiến độ hiện trên hàng chờ (xem /queue/generate/status).
   app.post('/queue/generate', guarded(async (s, req, reply) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const market = str(b.market).toUpperCase() as Market;
     const limit = Math.min(3, Math.max(1, Number(b.limit) || 1));
     if (!o.generator) return renderQueue(s, reply, {}, { kind: 'err', text: 'Chưa cấu hình khóa Gemini (GEMINI_API_KEY), không tạo được bản tin.' });
     if (!['VN', 'JP'].includes(market) || !canReview(s.actor, market)) return renderQueue(s, reply, {}, { kind: 'err', text: 'Bạn không có quyền tạo bản tin cho thị trường này.' });
-    const results = await generateNews({ db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, mediaDir: o.generator.mediaDir }, { market, limit, model: o.generator.model });
-    const made = results.filter((r) => r.outcome === 'created').length;
-    const skipped = results.filter((r) => r.outcome === 'skipped' && r.detail !== 'Công tắc tạm dừng đang bật').length;
-    const failed = results.filter((r) => r.outcome === 'error').length;
-    const paused = results.some((r) => r.detail === 'Công tắc tạm dừng đang bật');
-    const text = paused
-      ? 'Công tắc tạm dừng đang bật: không sinh bài mới.'
-      : `Đã tạo ${made} bản tin ${market} vào hàng chờ${skipped ? `, bỏ qua ${skipped} mục không đạt kiểm tra` : ''}${failed ? `, ${failed} lỗi gọi AI` : ''}.`;
-    return renderQueue(s, reply, {}, { kind: made || paused ? 'ok' : 'warn', text });
+    const gen = o.generator;
+    const job = genJobs.start(market, s.actor.email, limit, (onProgress) =>
+      generateNews({ db: o.db, gemini: gen.gemini, schema: gen.schema, mediaDir: gen.mediaDir }, { market, limit, model: gen.model, onProgress }));
+    if (!job) return renderQueue(s, reply, {}, { kind: 'warn', text: `Đang có một việc tạo bản tin ${market} chạy. Đợi xong rồi tạo tiếp.` });
+    return reply.redirect('/queue?ok=gen-started');
+  }));
+
+  app.get('/queue/generate/status', guarded(async (s, _req, reply) => reply.type('application/json; charset=utf-8').send(JSON.stringify(genJobs.recent(visibleMarkets(s.actor))))));
+
+  // Duyệt / từ chối hàng loạt. Duyệt chỉ áp dụng cho bài đủ điều kiện (điểm tốt, không khẳng định cần kiểm); bài khác được bỏ qua kèm lý do.
+  app.post('/queue/bulk', guarded(async (s, req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const ids = [...new Set((Array.isArray(b.ids) ? b.ids : [b.ids]).map((x) => Number(str(x))).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 50);
+    const act = str(b.bulk);
+    if (ids.length === 0) return renderQueue(s, reply, {}, { kind: 'warn', text: 'Chưa chọn bài nào.' });
+    if (act !== 'approve' && act !== 'reject') return renderQueue(s, reply, {}, { kind: 'err', text: 'Thao tác không hợp lệ.' });
+    const note = str(b.note).trim();
+    if (act === 'reject' && !note) return renderQueue(s, reply, {}, { kind: 'err', text: 'Từ chối hàng loạt cần nhập lý do.' });
+    const settings = await getAppSettings(o.db);
+    const now = new Date();
+    let done = 0;
+    const skipped: string[] = [];
+    const slots = new Map<Market, Date[]>();
+    for (const id of ids) {
+      try {
+        const d = await svc.getContent(o.db, s.actor, id);
+        if (act === 'reject') {
+          await svc.reject(o.db, s.actor, id, note);
+          done++;
+          continue;
+        }
+        const q = scoreQuality(d.package, d.item.market);
+        if (!bulkApprovable(q, d.package.claims_to_verify.length)) { skipped.push(`#${id} cần xem kỹ (điểm ${q.score}${d.package.claims_to_verify.length ? ', có khẳng định cần kiểm' : ''})`); continue; }
+        if (!slots.has(d.item.market)) {
+          const taken = await o.db.query<{ t: Date }>("SELECT scheduled_at AS t FROM content_item WHERE market = $1 AND state IN ('APPROVED','SCHEDULED') AND scheduled_at IS NOT NULL", [d.item.market]);
+          const want = (await o.db.query<{ n: number }>("SELECT count(*)::int AS n FROM content_item WHERE market = $1 AND state = 'IN_REVIEW'", [d.item.market])).rows[0]!.n;
+          slots.set(d.item.market, planSlots(d.item.market, settings.defaultPostTime[d.item.market] ?? DEFAULT_LOCAL_TIME[d.item.market], Math.min(want, 50), taken.rows.map((r) => new Date(r.t).getTime()), now));
+        }
+        const at = slots.get(d.item.market)!.shift();
+        if (!at) { skipped.push(`#${id} hết giờ trống trong 29 ngày tới`); continue; }
+        await svc.approve(o.db, s.actor, id, { revision: d.item.current_revision, packageHash: d.packageHash, scheduledAt: at, claimsConfirmed: false }, svcOpts, now);
+        done++;
+      } catch (e) {
+        if (!(e instanceof AppError)) throw e;
+        skipped.push(`#${id}: ${e.message}`);
+      }
+    }
+    const verb = act === 'approve' ? 'duyệt và hẹn giờ' : 'từ chối';
+    const text = `Đã ${verb} ${done}/${ids.length} bài${skipped.length ? `. Bỏ qua: ${skipped.slice(0, 5).join('; ')}${skipped.length > 5 ? `; và ${skipped.length - 5} bài khác` : ''}` : ''}.`;
+    return renderQueue(s, reply, {}, { kind: done && !skipped.length ? 'ok' : done ? 'warn' : 'err', text });
   }));
 
   app.post('/queue/publish-approved', guarded(async (s, _req, reply) => {

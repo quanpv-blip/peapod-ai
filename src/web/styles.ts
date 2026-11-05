@@ -422,9 +422,23 @@ table.users td{vertical-align:middle}
   .theme button span.lbl{display:none}
   .page-head h1{font-size:20px}
 }
+.qchip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
+.qchip.q-good{background:var(--ok-soft);color:var(--ok)}
+.qchip.q-ok{background:var(--warn-soft);color:var(--warn)}
+.qchip.q-low{background:var(--bad-soft);color:var(--bad)}
+.chk{width:34px;text-align:center}
+.bulk-bar{position:sticky;bottom:12px;z-index:5;box-shadow:0 6px 18px rgba(15,23,42,.12);display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 14px;margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.bulk-bar input[type=text]{min-width:220px;flex:1}
+.gen-panel{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.gen-panel.running{border-color:var(--brand)}
+.gen-panel.error{border-color:var(--bad)}
+.q-list{margin:6px 0 0;padding-left:18px}
+.q-list li.bad{color:var(--bad)}
+.q-list li.warn{color:var(--warn)}
 `;
 
 // Lớp tiện ích w0..w100 (rộng %) và h0..h100 (cao %) để biểu đồ gán theo dữ liệu mà không cần style nội tuyến (CSP).
-const steps = Array.from({ length: 101 }, (_, i) => `.w${i}{width:${i}%}.h${i}{height:${i}%}`).join('');
+const steps = Array.from({ length: 101 }, (_, i) => `.w${i}{width:${i}%}.h${i}{height:${i}%}
+`).join('');
 
 export const CSS = TOKENS + BASE + steps;

@@ -48,6 +48,10 @@ export interface GenerateOptions {
   limit: number;
   model: string;
   dryRun?: boolean;
+  /** Số lượt gọi AI chạy song song (mặc định 3). Mỗi mục nguồn là một lượt độc lập nên chạy song song an toàn. */
+  concurrency?: number;
+  /** Gọi sau mỗi mục xử lý xong: kết quả vừa có và số bài đã tạo cho tới lúc đó. */
+  onProgress?: (r: GenerateResult, made: number) => void;
 }
 
 export interface GenerateResult {
@@ -135,18 +139,35 @@ export async function generateNews(deps: GenerateDeps, opts: GenerateOptions): P
   const candidates = unusedItems(await fetchItems(opts.market, s.feeds[opts.market]), used);
   const out: GenerateResult[] = [];
   let made = 0;
-  for (const item of candidates) {
-    if (made >= opts.limit) break;
-    if (opts.dryRun) {
-      out.push({ title: item.title.slice(0, 60), outcome: 'dry-run', detail: 'chưa gọi AI' });
-      made++;
-      continue;
+  const width = Math.max(1, Math.min(opts.concurrency ?? 3, 5));
+  let next = 0;
+  let stop = false;
+  // Mỗi "làn" lấy mục kế tiếp cho tới khi đủ số bài hoặc hết mục. Số lượt đang bay không vượt quá số bài còn thiếu,
+  // nên không gọi AI thừa; mục bị bỏ qua (không đạt kiểm tra) được thay bằng mục kế tiếp.
+  let inflight = 0;
+  const lane = async (): Promise<void> => {
+    while (!stop && next < candidates.length && made < opts.limit) {
+      // Đủ lượt đang chạy cho số bài còn thiếu: đợi, vì nếu một lượt hỏng thì làn này sẽ nhận mục thay thế.
+      if (made + inflight >= opts.limit) {
+        await new Promise((r) => setTimeout(r, 20));
+        continue;
+      }
+      const item = candidates[next++]!;
+      inflight++;
+      try {
+        let r: GenerateResult;
+        if (opts.dryRun) r = { title: item.title.slice(0, 60), outcome: 'dry-run', detail: 'chưa gọi AI' };
+        else r = await generateFromItem(deps, s, opts.market, item, opts.model, 'NEWS');
+        if (r.outcome === 'created' || r.outcome === 'dry-run') made++;
+        out.push(r);
+        if (r.outcome === 'skipped' && r.detail.startsWith('Đã đạt trần')) stop = true;
+        opts.onProgress?.(r, made);
+      } finally {
+        inflight--;
+      }
     }
-    const r = await generateFromItem(deps, s, opts.market, item, opts.model, 'NEWS');
-    if (r.outcome === 'created') made++;
-    out.push(r);
-    if (r.outcome === 'skipped' && r.detail.startsWith('Đã đạt trần')) break;
-  }
+  };
+  await Promise.all(Array.from({ length: width }, () => lane()));
   return out;
 }
 

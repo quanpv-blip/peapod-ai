@@ -60,6 +60,19 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
     ${kpi('Tỷ lệ duyệt (7 ngày)', 'mute', s.approvalRate === null ? '-' : Math.round(s.approvalRate * 100), s.approvalRate === null ? '' : '%', s.decisions7d ? `${s.decisions7d} quyết định (duyệt, từ chối, yêu cầu sửa)` : 'Chưa có quyết định nào')}
   </div>`;
 
+  const usd = (n: number) => (n >= 1 ? n.toFixed(2) : n.toFixed(3));
+  const aiCard = html`<div class="panel"><div class="panel-h">Hiệu quả AI <span class="muted small">30 ngày gần nhất</span></div><div class="panel-b">
+    <table class="split-t"><tbody>
+      <tr><td>Bài AI tạo ra</td><td>${s.ai.created}</td></tr>
+      <tr><td>Bài được duyệt</td><td>${s.ai.approved}${s.ai.passRate === null ? '' : html` <span class="muted small">(${Math.round(s.ai.passRate * 100)}% số bài tạo)</span>`}</td></tr>
+      <tr><td>Bài đã đăng</td><td>${s.ai.published}</td></tr>
+      <tr><td>Chi phí AI</td><td>${usd(s.ai.spendUsd)} USD</td></tr>
+      <tr><td>Chi phí mỗi bài được duyệt</td><td>${s.ai.costPerApprovedUsd === null ? '-' : `${usd(s.ai.costPerApprovedUsd)} USD`}</td></tr>
+      <tr><td>Từ lúc tạo đến lúc duyệt (trung bình)</td><td>${s.ai.avgHoursToApprove === null ? '-' : span(s.ai.avgHoursToApprove * 3_600_000)}</td></tr>
+      <tr><td>Bài đã có video 9:16</td><td>${s.ai.videos}</td></tr>
+    </tbody></table>
+  </div></div>`;
+
   const present = ORDER.filter((k) => (s.byState[k] ?? 0) > 0);
   const stateCard = html`<div class="panel"><div class="panel-h">Phân bố theo trạng thái <span class="muted small">${total} bài</span></div><div class="panel-b">
     ${total
@@ -101,7 +114,7 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
       <div class="page-head"><div><h1>Tổng quan</h1><div class="sub">Tình hình duyệt và đăng bài của ${markets.join(' và ')}</div></div><a class="btn primary" href="/queue?state=IN_REVIEW">Mở hàng chờ duyệt</a></div>
       ${sysPanel}
       ${kpis}
-      <div class="cols"><div>${stateCard}${chart}</div><div>${upcoming}${marketCard}${activity}</div></div>
+      <div class="cols"><div>${stateCard}${chart}${aiCard}</div><div>${upcoming}${marketCard}${activity}</div></div>
     </div>`,
   );
 }
