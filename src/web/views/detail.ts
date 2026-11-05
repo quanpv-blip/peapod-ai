@@ -4,6 +4,8 @@ import { ACTION, FORMAT, marketTag, status, when, zoneLabel } from '../component
 import { empty, html, type Safe } from '../html.ts';
 import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
 import type { DiffOp, PackageDiff } from '../../domain/diff.ts';
+import type { ReelStatus } from '../../domain/reel.ts';
+import { buildForm, reelErrorBox, reelProgress } from './reel-parts.ts';
 
 export interface DetailView {
   ctx: Omit<PageCtx, 'title' | 'nav'>;
@@ -23,7 +25,7 @@ export interface DetailView {
   /** Bài đã có ảnh thẻ cho bản hiện tại. */
   hasCard?: boolean;
   /** Video Reels 9:16: trạng thái dựng, đã có video chưa, đã bật dịch vụ chưa, người xem có được dựng không. */
-  reel?: { status: { state: 'pending' | 'ready' | 'error'; error?: string } | null; hasVideo: boolean; configured: boolean; canGenerate: boolean };
+  reel?: { status: ReelStatus | null; hasVideo: boolean; configured: boolean; canGenerate: boolean };
   /** Khác biệt với bản trước (nếu có). */
   changes?: PackageDiff;
 }
@@ -32,15 +34,16 @@ function reelPanel(v: DetailView): Safe {
   const r = v.reel;
   if (!r) return empty;
   const id = v.d.item.id;
+  const st = r.status;
+  const active = st?.state === 'pending';
   return html`<div class="panel"><div class="panel-h">Video Reels (9:16)</div><div class="panel-b">
-    ${r.hasVideo ? html`<video class="reel-prev" controls playsinline preload="metadata" src="/contents/${id}/reel"></video>
+    ${active ? reelProgress(id, st, v.csrf, { poll: true }) : empty}
+    ${st?.state === 'error' ? reelErrorBox(st.error ?? 'Lỗi không xác định khi dựng video.') : empty}
+    ${st?.state === 'cancelled' ? html`<div class="notice">Đã hủy việc dựng. Video cũ (nếu có) vẫn dùng được.</div>` : empty}
+    ${active ? empty : r.hasVideo ? html`<video class="reel-prev" controls playsinline preload="metadata" src="/contents/${id}/reel"></video>
       <p class="small"><a href="/contents/${id}/reel" download>Tải video (MP4)</a></p>` : html`<p class="hint">Chưa có video. Video là ảnh dọc 1080×1920, 15 giây, dựng từ cùng nội dung bài.</p>`}
-    ${r.status?.state === 'pending' ? html`<div class="notice">Đang dựng video, thường mất 10–60 giây. Tải lại trang sau ít phút.</div>` : empty}
-    ${r.status?.state === 'error' ? html`<div class="notice err">Dựng video lỗi: ${r.status.error ?? 'không rõ'}</div>` : empty}
     ${!r.configured ? html`<p class="hint">Chưa bật dịch vụ Remotion (REMOTION_RENDER_URL), nên chưa dựng được video.</p>` : empty}
-    ${r.canGenerate && r.configured && r.status?.state !== 'pending' ? html`<form method="post" action="/contents/${id}/reel">
-      <input type="hidden" name="_csrf" value="${v.csrf}">
-      <button class="btn" type="submit">${r.hasVideo ? 'Dựng lại video' : 'Dựng video 9:16'}</button></form>` : empty}
+    ${r.canGenerate && r.configured && !active ? buildForm(id, v.csrf, r.hasVideo ? 'Dựng lại video' : 'Dựng video 9:16') : empty}
   </div></div>`;
 }
 

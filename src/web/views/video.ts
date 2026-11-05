@@ -1,9 +1,10 @@
 import type { ContentRow } from '../../services/contents.ts';
-import type { ReelStatus } from '../../services/reels.ts';
+import type { ReelStatus } from '../../domain/reel.ts';
 import type { Page } from '../../domain/paging.ts';
 import { marketTag, pager, status } from '../components.ts';
 import { empty, html, type Safe } from '../html.ts';
 import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
+import { buildForm, reelErrorBox, reelProgress } from './reel-parts.ts';
 
 export interface VideoRowInfo {
   headline: string;
@@ -49,11 +50,11 @@ export function videoView(v: VideoView): string {
   const tabs = STATE_FILTERS.map(([k, label]) => html`<a href="${link(k, v.filter.market)}" class="${v.filter.state === k ? 'on' : ''}">${label}</a>`);
   const marketOpts: [string, string][] = [['', 'Cả hai'], ...v.markets.map((m): [string, string] => [m, m])];
   const markets = v.markets.length > 1 ? html`<div class="seg">${marketOpts.map(([k, label]) => html`<a href="${link(v.filter.state, k)}" class="${v.filter.market === k ? 'on' : ''}">${label}</a>`)}</div>` : empty;
-  const hidden = html`<input type="hidden" name="_csrf" value="${v.ctx.csrf}">`;
+  const anyPending = [...v.info.values()].some((i) => i.reel?.state === 'pending');
 
   const videoCell = (r: ContentRow, i: VideoRowInfo | undefined): Safe => {
-    if (i?.reel?.state === 'pending') return html`<span class="muted">Đang dựng…</span>`;
-    if (i?.reel?.state === 'error') return html`<span class="warn-t">Lỗi: ${i.reel.error ?? 'không rõ'}</span>`;
+    if (i?.reel?.state === 'pending') return reelProgress(r.id, i.reel, v.ctx.csrf ?? '', { compact: true });
+    if (i?.reel?.state === 'error') return reelErrorBox(i.reel.error ?? 'Lỗi không xác định khi dựng video.');
     if (i?.built) {
       return html`<span>Đã có (bản v${r.current_revision})</span>
         <div class="small"><a href="/contents/${r.id}/reel" target="_blank" rel="noopener">Xem</a> · <a href="/contents/${r.id}/reel" download>Tải MP4</a></div>`;
@@ -64,10 +65,10 @@ export function videoView(v: VideoView): string {
 
   const actionCell = (r: ContentRow, i: VideoRowInfo | undefined): Safe => {
     if (!v.canBuild(r.market)) return html`<span class="muted small">Chỉ xem</span>`;
-    const busy = i?.reel?.state === 'pending';
-    const label = i?.built ? 'Dựng lại' : 'Dựng video';
-    return html`<form method="post" action="/contents/${r.id}/reel">${hidden}<input type="hidden" name="back" value="video">
-      <button class="btn" type="submit"${busy || !v.reelOn ? ' disabled' : ''}>${label}</button></form>`;
+    // Đang dựng thì không hiện nút dựng (tiến độ và nút hủy nằm ở cột video).
+    if (i?.reel?.state === 'pending') return empty;
+    if (!v.reelOn) return html`<span class="muted small">Chưa bật dịch vụ</span>`;
+    return buildForm(r.id, v.ctx.csrf ?? '', i?.built ? 'Dựng lại' : 'Dựng video', 'video');
   };
 
   const body: Safe = v.rows.length
@@ -88,7 +89,7 @@ export function videoView(v: VideoView): string {
 
   return page(
     { ...v.ctx, title: 'Video 9:16', nav: 'video' },
-    html`<div class="page">
+    html`<div class="page"${anyPending ? ' data-reel-refresh' : ''}>
       <div class="page-head"><div><h1>Video 9:16</h1><div class="sub">Video dọc 1080×1920, 15 giây, dựng từ nội dung bài bằng Remotion. Dựng chạy nền, bấm "Làm mới" để xem kết quả.</div></div>
         <div class="row-gap"><span class="muted">${v.page.total} bài</span><a class="btn" href="${link(v.filter.state, v.filter.market)}">Làm mới</a></div></div>
       ${flashBox(v.flash)}

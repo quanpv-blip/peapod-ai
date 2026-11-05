@@ -27,11 +27,25 @@ describe('trang Video 9:16', () => {
     expect(out).toContain('Dựng lại');
   });
 
-  it('đang dựng: nút bị vô hiệu hóa', () => {
-    const info = new Map<string, VideoRowInfo>([['7', { headline: 'Tin A', built: false, builtRevision: null, reel: { state: 'pending', at: 'x' } }]]);
+  it('đang dựng: không có nút dựng, có thanh tiến độ, nút hủy và tự tải lại trang', () => {
+    const reel = { state: 'pending' as const, at: new Date().toISOString(), stage: 'rendering' as const, progress: 0.45, frames: 200, totalFrames: 450, etaSeconds: 9 };
+    const info = new Map<string, VideoRowInfo>([['7', { headline: 'Tin A', built: false, builtRevision: null, reel }]]);
     const out = videoView({ ...base, info, reelOn: true, canBuild: () => true });
-    expect(out).toMatch(/<button[^>]* disabled>/);
-    expect(out).toContain('Đang dựng');
+    expect(out).not.toContain('action="/contents/7/reel" data-reel-form');
+    expect(out).toContain('<progress class="reel-bar"');
+    expect(out).toContain('value="45"');
+    expect(out).toContain('Đang dựng khung hình 200/450');
+    expect(out).toContain('còn khoảng 9 giây');
+    expect(out).toContain('action="/contents/7/reel/cancel"');
+    expect(out).toContain('data-reel-refresh');
+  });
+
+  it('lỗi: hiện lý do và nút dựng lại; không tự tải lại trang', () => {
+    const info = new Map<string, VideoRowInfo>([['7', { headline: 'Tin A', built: false, builtRevision: null, reel: { state: 'error', at: 'x', error: 'Dịch vụ render gặp lỗi' } }]]);
+    const out = videoView({ ...base, info, reelOn: true, canBuild: () => true });
+    expect(out).toContain('Dựng video lỗi: Dịch vụ render gặp lỗi');
+    expect(out).toContain('action="/contents/7/reel"');
+    expect(out).not.toContain('data-reel-refresh');
   });
 
   it('người chỉ xem (không có quyền thị trường) không thấy nút dựng', () => {
@@ -45,7 +59,8 @@ describe('trang Video 9:16', () => {
     const info = new Map<string, VideoRowInfo>([['7', { headline: 'Tin A', built: false, builtRevision: null, reel: null }]]);
     const out = videoView({ ...base, info, reelOn: false, canBuild: () => true });
     expect(out).toContain('REMOTION_RENDER_URL');
-    expect(out).toMatch(/<button[^>]* disabled>/);
+    expect(out).toContain('Chưa bật dịch vụ');
+    expect(out).not.toContain('action="/contents/7/reel"');
   });
 });
 

@@ -320,8 +320,22 @@ table.users td{vertical-align:middle}
 .card-prev{margin-top:16px;text-align:center}
 .reel-prev{display:block;margin:0 auto;width:270px;max-width:100%;aspect-ratio:9/16;background:#000;border-radius:var(--radius);border:1px solid var(--line)}
 .row-gap{display:flex;align-items:center;gap:12px}
-.studio-frame{display:block;width:100%;height:calc(100vh - 230px);min-height:620px;border:1px solid var(--line);border-radius:var(--radius);background:#000}
-@media (max-width:900px){.studio-frame{height:70vh;min-height:480px}}
+.reel-progress{margin:0 0 12px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--sunken)}
+.reel-progress.compact{margin:0;padding:0;border:0;background:none;min-width:200px}
+.reel-bar{display:block;width:100%;height:10px;border:0;border-radius:99px;overflow:hidden;appearance:none;-webkit-appearance:none;background:var(--line)}
+.reel-bar::-webkit-progress-bar{background:var(--line);border-radius:99px}
+.reel-bar::-webkit-progress-value{background:var(--brand);border-radius:99px;transition:width .4s ease}
+.reel-bar::-moz-progress-bar{background:var(--brand);border-radius:99px}
+.reel-progress.compact .reel-bar{height:6px}
+.reel-meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:13px;color:var(--ink-2)}
+.reel-meta b{color:var(--ink);font-variant-numeric:tabular-nums}
+.reel-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.reel-row .btn{padding:4px 12px;font-size:13px}
+.studio-wrap{position:relative;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:#1e1e1e;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.studio-wrap::before{content:"Đang tải Remotion Studio…";position:absolute;inset:0;display:grid;place-items:center;color:#9ca3af;font-size:14px}
+.studio-frame{position:relative;display:block;width:100%;height:calc(100vh - 230px);min-height:620px;border:0;background:transparent}
+.studio-foot{margin:10px 2px 0}
+@media (max-width:900px){.studio-frame{height:72vh;min-height:480px}}
 .card-prev img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
 .card-prev .small{margin-top:8px}
 .diff-b{margin-bottom:14px}

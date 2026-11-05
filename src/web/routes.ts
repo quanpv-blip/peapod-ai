@@ -17,8 +17,10 @@ import { changeOwnPassword } from '../services/account.ts';
 import { diffPackages } from '../domain/diff.ts';
 import { pageInfo, PAGE_SIZE } from '../domain/paging.ts';
 import { notifyAll } from '../services/alerts.ts';
-import { remoteCardConfigFromEnv, renderReelRemote } from '../media/remote-card.ts';
-import { latestReelPath, reelStatus, startReelJob } from '../services/reels.ts';
+import { makeReelRemote, remoteCardConfigFromEnv } from '../media/remote-card.ts';
+import { cancelReel, latestReelPath, reelStatus, startReelJob } from '../services/reels.ts';
+import { reelView } from '../domain/reel.ts';
+import { REEL_JS } from './reel-js.ts';
 import { readFile } from 'node:fs/promises';
 import { settingsPage } from './views/settings.ts';
 import { costsPage } from './views/costs.ts';
@@ -67,9 +69,11 @@ const OK_MESSAGES: Record<string, string> = {
   resumed: 'Đã TẮT công tắc tạm dừng. Hệ thống hoạt động bình thường.',
   'alert-sent': 'Đã gửi tin thử tới kênh cảnh báo. Kiểm tra nhóm Telegram hoặc kênh Slack.',
   'alert-none': 'Chưa có kênh cảnh báo nào được cấu hình. Đặt TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID hoặc SLACK_WEBHOOK_URL trong file .env.',
-  'reel-started': 'Đang dựng video 9:16, thường mất 10–60 giây. Tải lại trang sau ít phút.',
-  'reel-busy': 'Video của bài này đang được dựng. Chờ xong rồi tải lại trang.',
+  'reel-started': 'Đã bắt đầu dựng video 9:16. Tiến độ hiện ngay trên trang.',
+  'reel-busy': 'Video của bài này đang được dựng. Theo dõi tiến độ hoặc hủy trước khi dựng lại.',
   'reel-off': 'Chưa bật dịch vụ Remotion (REMOTION_RENDER_URL) nên không dựng được video.',
+  'reel-failed': 'Không bắt đầu được việc dựng video. Xem lý do trong khung đỏ trên trang bài.',
+  'reel-cancelled': 'Đã hủy việc dựng video.',
 };
 
 // Giới hạn thử đăng nhập: 5 lần sai / 15 phút cho mỗi (IP + email). Bộ nhớ trong đủ cho một tiến trình duy nhất.
@@ -120,7 +124,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
 
   // Trang Biên tập video nhúng Remotion Studio: chỉ cho khung nhúng đúng một nguồn đã cấu hình.
   const studioUrl = studioEmbedUrl(process.env.REMOTION_STUDIO_URL);
-  const csp = `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; media-src 'self'; form-action 'self'; base-uri 'none'; ${studioUrl ? `frame-src ${new URL(studioUrl).origin}; ` : ''}frame-ancestors 'none'`;
+  const csp = `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; ${studioUrl ? `frame-src ${new URL(studioUrl).origin}; ` : ''}frame-ancestors 'none'`;
   app.addHook('onSend', async (_req, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
@@ -135,6 +139,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   app.get('/assets/login-bg.svg', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/svg+xml; charset=utf-8').send(LOGIN_BG_SVG));
   app.get('/assets/side-bg.svg', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/svg+xml; charset=utf-8').send(SIDE_BG_SVG));
   app.get('/assets/theme.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(THEME_JS));
+  app.get('/assets/reel.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(REEL_JS));
 
   interface Session { actor: Actor; sid: string; csrf: string; pending: number; paused: boolean }
 
@@ -478,18 +483,38 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   }));
 
   // --- video Reels 9:16 của bài (dựng qua dịch vụ Remotion, chạy nền) ---
-  const reelDeps = () => ({ db: o.db, mediaDir: process.env.MEDIA_DIR ?? './media', renderReel: (input: Parameters<typeof renderReelRemote>[0]) => renderReelRemote(input, remoteCardConfigFromEnv()!) });
+  const reelDeps = () => ({ db: o.db, mediaDir: process.env.MEDIA_DIR ?? './media', remote: makeReelRemote(remoteCardConfigFromEnv()!) });
+  // Quay về trang Video (nếu thao tác từ đó) hoặc trang bài. Chỉ hai đích cố định, không nhận URL từ người dùng.
+  const reelBack = (b: Record<string, unknown>, id: number) => (q: string) => (str(b.back) === 'video' ? `/video?ok=${q}` : `/contents/${id}?ok=${q}`);
+
   app.post('/contents/:id/reel', guarded(async (s, req, reply) => {
     const id = idOf(req);
-    const b = (req.body ?? {}) as Record<string, unknown>;
-    // Quay về trang Video (nếu bấm từ đó) hoặc trang bài. Chỉ hai đích cố định, không nhận URL từ người dùng.
-    const back = (q: string) => (str(b.back) === 'video' ? `/video?ok=${q}` : `/contents/${id}?ok=${q}`);
+    const back = reelBack((req.body ?? {}) as Record<string, unknown>, id);
     const d = await svc.getContent(o.db, s.actor, id);
     if (!canReview(s.actor, d.item.market)) throw new AppError('FORBIDDEN', 'Bạn không có quyền dựng video cho thị trường này');
     if (!remoteCardConfigFromEnv()) return reply.redirect(back('reel-off'));
+    // Chặn dựng chồng: chỉ cho dựng khi không có việc nào đang chạy (việc treo quá lâu đã được báo gián đoạn).
     if ((await reelStatus(o.db, id))?.state === 'pending') return reply.redirect(back('reel-busy'));
-    startReelJob(reelDeps(), id, d.item.current_revision, d.package);
-    return reply.redirect(back('reel-started'));
+    const st = await startReelJob(reelDeps(), id, d.item.current_revision, d.package);
+    return reply.redirect(back(st.state === 'error' ? 'reel-failed' : 'reel-started'));
+  }));
+
+  app.post('/contents/:id/reel/cancel', guarded(async (s, req, reply) => {
+    const id = idOf(req);
+    const back = reelBack((req.body ?? {}) as Record<string, unknown>, id);
+    const d = await svc.getContent(o.db, s.actor, id);
+    if (!canReview(s.actor, d.item.market)) throw new AppError('FORBIDDEN', 'Bạn không có quyền hủy việc dựng video cho thị trường này');
+    const cfg = remoteCardConfigFromEnv();
+    await cancelReel(o.db, cfg ? makeReelRemote(cfg) : null, id);
+    return reply.redirect(back('reel-cancelled'));
+  }));
+
+  // Tiến độ dựng cho trang bài và trang Video (JSON, không cache).
+  app.get('/contents/:id/reel/status', guarded(async (s, req, reply) => {
+    const id = idOf(req);
+    const d = await svc.getContent(o.db, s.actor, id);
+    const hasVideo = !!(await latestReelPath(o.db, id, d.item.current_revision));
+    return reply.type('application/json; charset=utf-8').send(JSON.stringify(reelView(await reelStatus(o.db, id), hasVideo)));
   }));
 
   // --- trang Video 9:16: danh sách bài và trạng thái video ---
