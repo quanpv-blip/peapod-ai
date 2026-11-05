@@ -79,7 +79,7 @@ describe('chi phí và múi giờ', () => {
 
 describe('ảnh thẻ', () => {
   it('dựng PNG 1080x1350 có chữ tiếng Việt và tiếng Nhật', async () => {
-    const png = await renderCard({ market: 'JP', title: '【ニュース】テスト ệ ộ', bullets: ['一つ目', 'Hai'], source: 'テスト', date: '03/11/2026' });
+    const png = await renderCard({ market: 'JP', title: '【ニュース】テスト ệ ộ', bullets: ['一つ目', 'Hai'], takeaway: '当社の見方の例', source: 'テスト', date: '03/11/2026' });
     expect(png.subarray(1, 4).toString()).toBe('PNG');
     expect(png.readUInt32BE(16)).toBe(1080);
     expect(png.readUInt32BE(20)).toBe(1350);

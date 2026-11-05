@@ -10,7 +10,8 @@ import { campaignSourceAllowed, type AppSettings } from '../domain/appSettings.t
 import { dedupeByUrl, parseFeed, type FeedItem } from '../domain/rss.ts';
 import { sanitize } from '../domain/sanitizer.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
-import { renderCard, CARD_H, CARD_W } from '../media/card.ts';
+import { renderCard, cardInputFrom, CARD_H, CARD_W } from '../media/card.ts';
+import { remoteCardConfigFromEnv, renderCardRemote } from '../media/remote-card.ts';
 import { createGenerated } from './contents.ts';
 import { recentItems, scoreItems, type SourceItem } from './sources.ts';
 import { getAppSettings } from './appSettings.ts';
@@ -61,13 +62,12 @@ const PAUSED_DETAIL = 'Công tắc tạm dừng đang bật';
 
 /** Ảnh thẻ cho một bài: PNG lưu vào MEDIA_DIR/cards và ghi vào media_asset (revision 1). */
 export async function storeCard(db: pg.Pool, mediaDir: string, contentId: number, revision: number, pkg: ContentPackage, now = new Date()): Promise<string> {
-  const png = await renderCard({
-    market: pkg.market,
-    title: pkg.post.headline,
-    bullets: (pkg.media.card as { bullets?: string[] } | undefined)?.bullets ?? [],
-    source: pkg.sources[0]!.title,
-    date: new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).format(now),
-  });
+  const input = cardInputFrom(pkg, new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).format(now));
+  // Ưu tiên dịch vụ Remotion (video và thẻ đồng bộ với Reels); lỗi hoặc tắt thì dùng Satori như trước.
+  const remote = remoteCardConfigFromEnv();
+  const fromRemote = remote ? await renderCardRemote(input, remote) : null;
+  if (remote && !fromRemote) console.warn(JSON.stringify({ level: 'warn', msg: 'thẻ Remotion lỗi, dùng Satori', contentId }));
+  const png = fromRemote ?? (await renderCard(input));
   const dir = path.join(mediaDir, 'cards');
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, `${contentId}-r${revision}.png`);

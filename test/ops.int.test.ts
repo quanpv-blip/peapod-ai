@@ -121,7 +121,8 @@ d('vận hành (PostgreSQL thật)', () => {
     });
   });
 
-  describe('ảnh thẻ và đăng ảnh', () => {
+  // Dựng ảnh thẻ (Satori) mất vài giây, và có thể chậm hơn khi máy đang bận; mặc định 5 giây là quá sát.
+  describe('ảnh thẻ và đăng ảnh', { timeout: 30_000 }, () => {
     it('lưu PNG vào thư mục media và ghi media_asset', async () => {
       const id = await svc.createGenerated(db, cardPkg(), 'test');
       const file = await storeCard(db, MEDIA, id, 1, cardPkg());

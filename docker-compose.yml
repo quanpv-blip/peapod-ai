@@ -13,6 +13,9 @@ x-app: &app
   image: peapod-ai:local
   restart: unless-stopped
   logging: *logs
+  # Cho container gọi dịch vụ render Remotion chạy trên máy chủ (REMOTION_RENDER_URL=http://host.docker.internal:4100).
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   env_file: .env
   environment:
     DATABASE_URL: postgres://app:${POSTGRES_PASSWORD:?đặt POSTGRES_PASSWORD trong .env}@postgres:5432/peapod
@@ -54,9 +57,9 @@ services:
   api:
     <<: *app
     command: ["node", "dist/src/server.js"]
-    # Không publish cổng ra ngoài; truy cập qua Caddy (prod) hoặc cổng loopback khi dev.
+    # Mặc định chỉ máy này truy cập được (127.0.0.1). Đặt API_BIND=0.0.0.0 trong .env để máy khác trong mạng LAN vào được.
     ports:
-      - "127.0.0.1:${API_HOST_PORT:-3000}:3000"
+      - "${API_BIND:-127.0.0.1}:${API_HOST_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/healthz"]
       interval: 10s
