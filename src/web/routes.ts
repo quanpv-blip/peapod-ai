@@ -17,6 +17,8 @@ import { changeOwnPassword } from '../services/account.ts';
 import { diffPackages } from '../domain/diff.ts';
 import { pageInfo, PAGE_SIZE } from '../domain/paging.ts';
 import { notifyAll } from '../services/alerts.ts';
+import { remoteCardConfigFromEnv, renderReelRemote } from '../media/remote-card.ts';
+import { latestReelPath, reelStatus, startReelJob } from '../services/reels.ts';
 import { readFile } from 'node:fs/promises';
 import { settingsPage } from './views/settings.ts';
 import { costsPage } from './views/costs.ts';
@@ -63,6 +65,9 @@ const OK_MESSAGES: Record<string, string> = {
   resumed: 'Đã TẮT công tắc tạm dừng. Hệ thống hoạt động bình thường.',
   'alert-sent': 'Đã gửi tin thử tới kênh cảnh báo. Kiểm tra nhóm Telegram hoặc kênh Slack.',
   'alert-none': 'Chưa có kênh cảnh báo nào được cấu hình. Đặt TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID hoặc SLACK_WEBHOOK_URL trong file .env.',
+  'reel-started': 'Đang dựng video 9:16, thường mất 10–60 giây. Tải lại trang sau ít phút.',
+  'reel-busy': 'Video của bài này đang được dựng. Chờ xong rồi tải lại trang.',
+  'reel-off': 'Chưa bật dịch vụ Remotion (REMOTION_RENDER_URL) nên không dựng được video.',
 };
 
 // Giới hạn thử đăng nhập: 5 lần sai / 15 phút cho mỗi (IP + email). Bộ nhớ trong đủ cho một tiến trình duy nhất.
@@ -103,7 +108,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'same-origin');
-    reply.header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+    reply.header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; media-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
     if (!reply.hasHeader('Cache-Control')) reply.header('Cache-Control', 'no-store');
     return payload;
   });
@@ -275,6 +280,12 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
       canPublish: !!o.publisher && canReview(s.actor, d.item.market) && d.item.state === 'APPROVED',
       fbUrl: d.item.fb_post_id ? `https://www.facebook.com/${d.item.fb_post_id}` : undefined,
       hasCard: (card.rowCount ?? 0) > 0,
+      reel: {
+        status: await reelStatus(o.db, id),
+        hasVideo: !!(await latestReelPath(o.db, id, d.item.current_revision)),
+        configured: !!remoteCardConfigFromEnv(),
+        canGenerate: canReview(s.actor, d.item.market),
+      },
       changes,
       draft: extra.draft, flash: extra.flash,
     }), extra.code ?? 200);
@@ -305,7 +316,8 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
 
   app.get('/contents/:id', guarded(async (s, req, reply) => {
     try {
-      return await showDetail(s, reply, idOf(req));
+      const okMsg = OK_MESSAGES[str((req.query as Record<string, unknown>).ok)];
+      return await showDetail(s, reply, idOf(req), okMsg ? { flash: { kind: 'ok', text: okMsg } } : {});
     } catch (e) {
       if (e instanceof AppError && e.code === 'NOT_FOUND') return html(reply, notFound(s), 404);
       throw e;
@@ -446,6 +458,25 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     );
     if (r.outcome === 'created') return reply.redirect(`/contents/${r.id}`);
     return fail(r.outcome === 'error' ? `Lỗi khi gọi AI: ${r.detail}` : r.detail);
+  }));
+
+  // --- video Reels 9:16 của bài (dựng qua dịch vụ Remotion, chạy nền) ---
+  const reelDeps = () => ({ db: o.db, mediaDir: process.env.MEDIA_DIR ?? './media', renderReel: (input: Parameters<typeof renderReelRemote>[0]) => renderReelRemote(input, remoteCardConfigFromEnv()!) });
+  app.post('/contents/:id/reel', guarded(async (s, req, reply) => {
+    const id = idOf(req);
+    const d = await svc.getContent(o.db, s.actor, id);
+    if (!canReview(s.actor, d.item.market)) throw new AppError('FORBIDDEN', 'Bạn không có quyền dựng video cho thị trường này');
+    if (!remoteCardConfigFromEnv()) return reply.redirect(`/contents/${id}?ok=reel-off`);
+    if ((await reelStatus(o.db, id))?.state === 'pending') return reply.redirect(`/contents/${id}?ok=reel-busy`);
+    startReelJob(reelDeps(), id, d.item.current_revision, d.package);
+    return reply.redirect(`/contents/${id}?ok=reel-started`);
+  }));
+  app.get('/contents/:id/reel', guarded(async (s, req, reply) => {
+    const id = idOf(req);
+    const d = await svc.getContent(o.db, s.actor, id);
+    const file = await latestReelPath(o.db, id, d.item.current_revision);
+    if (!file) return reply.code(404).type('text/plain; charset=utf-8').send('Chưa có video');
+    return reply.header('Cache-Control', 'private, max-age=60').type('video/mp4').send(await readFile(file));
   }));
 
   // --- ảnh thẻ của bài (E6) ---

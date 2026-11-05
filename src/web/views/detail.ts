@@ -22,8 +22,26 @@ export interface DetailView {
   fbUrl?: string;
   /** Bài đã có ảnh thẻ cho bản hiện tại. */
   hasCard?: boolean;
+  /** Video Reels 9:16: trạng thái dựng, đã có video chưa, đã bật dịch vụ chưa, người xem có được dựng không. */
+  reel?: { status: { state: 'pending' | 'ready' | 'error'; error?: string } | null; hasVideo: boolean; configured: boolean; canGenerate: boolean };
   /** Khác biệt với bản trước (nếu có). */
   changes?: PackageDiff;
+}
+
+function reelPanel(v: DetailView): Safe {
+  const r = v.reel;
+  if (!r) return empty;
+  const id = v.d.item.id;
+  return html`<div class="panel"><div class="panel-h">Video Reels (9:16)</div><div class="panel-b">
+    ${r.hasVideo ? html`<video class="reel-prev" controls playsinline preload="metadata" src="/contents/${id}/reel"></video>
+      <p class="small"><a href="/contents/${id}/reel" download>Tải video (MP4)</a></p>` : html`<p class="hint">Chưa có video. Video là ảnh dọc 1080×1920, 15 giây, dựng từ cùng nội dung bài.</p>`}
+    ${r.status?.state === 'pending' ? html`<div class="notice">Đang dựng video, thường mất 10–60 giây. Tải lại trang sau ít phút.</div>` : empty}
+    ${r.status?.state === 'error' ? html`<div class="notice err">Dựng video lỗi: ${r.status.error ?? 'không rõ'}</div>` : empty}
+    ${!r.configured ? html`<p class="hint">Chưa bật dịch vụ Remotion (REMOTION_RENDER_URL), nên chưa dựng được video.</p>` : empty}
+    ${r.canGenerate && r.configured && r.status?.state !== 'pending' ? html`<form method="post" action="/contents/${id}/reel">
+      <input type="hidden" name="_csrf" value="${v.csrf}">
+      <button class="btn" type="submit">${r.hasVideo ? 'Dựng lại video' : 'Dựng video 9:16'}</button></form>` : empty}
+  </div></div>`;
 }
 
 function diffPanel(c?: PackageDiff): Safe {
@@ -148,6 +166,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
       <div class="split">
         <div>
           <div class="panel"><div class="panel-h">Xem trước bài đăng</div><div class="panel-b">${preview}${v.hasCard ? html`<div class="card-prev"><img src="/contents/${it.id}/card" alt="Ảnh thẻ của bài" width="540" height="675" loading="lazy"><div class="small muted">Ảnh thẻ dựng tự động. Đây là ảnh sẽ đăng kèm bài.</div></div>` : empty}</div></div>
+          ${reelPanel(v)}
           ${diffPanel(v.changes)}${sources}${editForm}
         </div>
         <aside>${decision}${publishBox}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>

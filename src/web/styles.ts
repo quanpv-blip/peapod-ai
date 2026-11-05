@@ -318,6 +318,7 @@ table.users td{vertical-align:middle}
 .fb-card b{display:block;margin-bottom:6px}
 .fb-card ul{margin:0;padding-left:18px}
 .card-prev{margin-top:16px;text-align:center}
+.reel-prev{display:block;margin:0 auto;width:270px;max-width:100%;aspect-ratio:9/16;background:#000;border-radius:var(--radius);border:1px solid var(--line)}
 .card-prev img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
 .card-prev .small{margin-top:8px}
 .diff-b{margin-bottom:14px}
