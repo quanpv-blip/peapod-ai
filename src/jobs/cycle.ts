@@ -8,6 +8,7 @@ import { generateNews } from '../services/generate.ts';
 import { autoApproveVN } from '../services/autoApprove.ts';
 import { isPaused } from '../services/settings.ts';
 import { publishApproved, reconcileScheduled, type PublisherDeps } from '../services/publish.ts';
+import { refreshMetrics } from '../services/metrics.ts';
 import { refreshSources } from '../services/sources.ts';
 import type { FeedItem } from '../domain/rss.ts';
 
@@ -58,6 +59,18 @@ export async function runCycle(deps: CycleDeps): Promise<string[]> {
     log.push(`đăng: ${scheduled} hẹn mới, ${failed.length} lỗi; đối soát: ${published} đã đăng, ${lost.length} cần kiểm tra`);
     for (const r of [...failed, ...lost]) await deps.notify(`⚠️ Bài #${r.id}: ${r.detail}`);
     if (scheduled) await deps.notify(`🗓️ Đã hẹn ${scheduled} bài lên Trang`);
+
+    // Đọc số liệu tương tác bài đã đăng mỗi 2 giờ. Lỗi đọc số liệu không ảnh hưởng việc đăng bài.
+    const lastMetrics = Number((await getFlag(deps.db, 'metrics_refreshed_at')) ?? 0);
+    if (now.getTime() - lastMetrics > 2 * 3_600_000) {
+      try {
+        const m = await refreshMetrics({ db: deps.db, meta: deps.publisher.meta, pages: deps.publisher.pages, now: () => now });
+        log.push(`số liệu tương tác: ${m.updated} bài cập nhật${m.failed ? `, ${m.failed} lỗi` : ''}`);
+      } catch (e) {
+        log.push(`số liệu tương tác lỗi: ${(e as Error).message.slice(0, 100)}`);
+      }
+      await setFlag(deps.db, 'metrics_refreshed_at', String(now.getTime()), 'system:cycle');
+    }
   }
 
   if (deps.generator) {

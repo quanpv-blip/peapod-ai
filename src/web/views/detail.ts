@@ -27,6 +27,8 @@ export interface DetailView {
   hasCard?: boolean;
   /** Video Reels 9:16: trạng thái dựng, đã có video chưa, đã bật dịch vụ chưa, người xem có được dựng không. */
   reel?: { status: ReelStatus | null; hasVideo: boolean; configured: boolean; canGenerate: boolean };
+  /** Số liệu tương tác từ Meta (bài đã đăng). */
+  metric?: { reactions: number; comments: number; shares: number; impressions: number | null; fetchedAt: Date } | null;
   /** Khác biệt với bản trước (nếu có). */
   changes?: PackageDiff;
 }
@@ -179,7 +181,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
           ${reelPanel(v)}
           ${diffPanel(v.changes)}${sources}${editForm}
         </div>
-        <aside>${decision}${publishBox}${quality}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
+        <aside>${decision}${publishBox}${metricPanel(v)}${quality}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
       </div>
     </div>`,
   );
@@ -209,3 +211,13 @@ function hostOf(u: string): string {
 }
 
 const stateText = (s: string) => ({ APPROVED: 'Đã duyệt', SCHEDULED: 'Đã hẹn giờ' })[s] ?? s;
+
+function metricPanel(v: DetailView): Safe {
+  if (v.d.item.state !== 'PUBLISHED') return empty;
+  const m = v.metric;
+  if (!m) return html`<div class="panel"><div class="panel-h">Tương tác trên Facebook</div><div class="panel-b"><span class="muted small">Chưa có số liệu. Hệ thống đọc từ Meta mỗi 2 giờ sau khi bài đăng.</span></div></div>`;
+  return html`<div class="panel"><div class="panel-h">Tương tác trên Facebook</div><div class="panel-b"><dl class="facts">
+    <dt>Lượt phản ứng</dt><dd>${m.reactions}</dd><dt>Bình luận</dt><dd>${m.comments}</dd><dt>Chia sẻ</dt><dd>${m.shares}</dd>
+    <dt>Lượt hiển thị</dt><dd>${m.impressions === null ? 'chưa có (cần quyền read_insights)' : m.impressions}</dd>
+    <dt>Cập nhật</dt><dd>${when(m.fetchedAt, v.d.item.market)}</dd></dl></div></div>`;
+}

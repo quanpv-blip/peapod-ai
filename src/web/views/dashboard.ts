@@ -4,6 +4,7 @@ import { empty, html, type Safe } from '../html.ts';
 import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
 import type { AuditRow } from './audit.ts';
 import { ACTION } from '../components.ts';
+import { bestSlot, engagement, MIN_POSTS_PER_SLOT, summarize, type PostMetric } from '../../domain/insights.ts';
 
 export interface SystemView {
   metaOn: boolean;
@@ -23,7 +24,7 @@ function kpi(label: string, tone: string, value: string | number, unit: string, 
   return html`<div class="kpi"><div class="kpi-l"><i class="c-${tone}"></i>${label}</div><div class="kpi-v">${value}<small>${unit}</small></div><div class="kpi-s">${sub}</div></div>`;
 }
 
-export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, recent: AuditRow[], markets: ('VN' | 'JP')[], sys?: SystemView): string {
+export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, recent: AuditRow[], markets: ('VN' | 'JP')[], metrics: PostMetric[], sys?: SystemView): string {
   const dot = (ok: boolean, text: string) => html`<li class="${ok ? 'pass' : 'fail'}"><span class="k">${ok ? '✓' : '✕'}</span><span>${text}</span></li>`;
   const hidden = html`<input type="hidden" name="_csrf" value="${ctx.csrf}">`;
   const sysPanel = sys
@@ -73,6 +74,27 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
     </tbody></table>
   </div></div>`;
 
+  const sum30 = summarize(metrics);
+  const slotText = (m: 'VN' | 'JP') => {
+    const b = bestSlot(metrics, m);
+    return b ? `${m}: đăng lúc ${String(b.hour).padStart(2, '0')}:00 hiệu quả nhất (trung bình ${Math.round(b.avg)} điểm/bài, ${b.posts} bài)` : `${m}: chưa đủ dữ liệu (cần ít nhất ${MIN_POSTS_PER_SLOT} bài cùng khung giờ)`;
+  };
+  const insightCard = html`<div class="panel"><div class="panel-h">Hiệu quả bài đăng <span class="muted small">30 ngày, số liệu từ Facebook</span></div><div class="panel-b">
+    ${sum30.posts
+      ? html`<table class="split-t"><tbody>
+          <tr><td>Bài có số liệu</td><td>${sum30.posts}</td></tr>
+          <tr><td>Phản ứng · Bình luận · Chia sẻ</td><td>${sum30.reactions} · ${sum30.comments} · ${sum30.shares}</td></tr>
+          <tr><td>Lượt hiển thị</td><td>${sum30.impressions === null ? 'chưa có' : sum30.impressions}</td></tr>
+          <tr><td>Điểm tương tác trung bình</td><td>${Math.round(sum30.avgEngagement ?? 0)}</td></tr>
+        </tbody></table>
+        <h2>Bài nổi bật</h2>
+        <ul class="list">${sum30.top.map((m) => html`<li><div class="what"><a href="/contents/${m.id}">${m.headline}</a><span class="muted small">${marketTag(m.market)} · ${engagement(m)} điểm (${m.reactions} thích, ${m.comments} bình luận, ${m.shares} chia sẻ)</span></div></li>`)}</ul>
+        <h2>Gợi ý giờ đăng</h2>
+        <ul>${markets.map((m) => html`<li class="small">${slotText(m)}</li>`)}</ul>
+        <p class="hint">Điểm tương tác = thích + 3 × bình luận + 5 × chia sẻ.</p>`
+      : html`<div class="empty">Chưa có số liệu. Hệ thống đọc từ Meta mỗi 2 giờ sau khi bài được đăng.</div>`}
+  </div></div>`;
+
   const present = ORDER.filter((k) => (s.byState[k] ?? 0) > 0);
   const stateCard = html`<div class="panel"><div class="panel-h">Phân bố theo trạng thái <span class="muted small">${total} bài</span></div><div class="panel-b">
     ${total
@@ -114,7 +136,7 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
       <div class="page-head"><div><h1>Tổng quan</h1><div class="sub">Tình hình duyệt và đăng bài của ${markets.join(' và ')}</div></div><a class="btn primary" href="/queue?state=IN_REVIEW">Mở hàng chờ duyệt</a></div>
       ${sysPanel}
       ${kpis}
-      <div class="cols"><div>${stateCard}${chart}${aiCard}</div><div>${upcoming}${marketCard}${activity}</div></div>
+      <div class="cols"><div>${stateCard}${chart}${insightCard}${aiCard}</div><div>${upcoming}${marketCard}${activity}</div></div>
     </div>`,
   );
 }

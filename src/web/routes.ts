@@ -5,6 +5,7 @@ import { fromLocalInput, nextBusinessSlot, DEFAULT_LOCAL_TIME, toLocalInput } fr
 import type { ContentPackage, Market } from '../domain/package.ts';
 import { bulkApprovable, scoreQuality } from '../domain/quality.ts';
 import { planSlots } from '../domain/bulk.ts';
+import { listMetrics, metricOf } from '../services/metrics.ts';
 import { GenJobs } from '../services/genJobs.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import * as svc from '../services/contents.ts';
@@ -184,9 +185,9 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
 
   // --- tổng quan ---
   app.get('/', guarded(async (s, req, reply) => {
-    const [stats, recent] = await Promise.all([getStats(o.db, s.actor), svc.listAudit(o.db, s.actor, 6)]);
+    const [stats, recent, metrics] = await Promise.all([getStats(o.db, s.actor), svc.listAudit(o.db, s.actor, 6), listMetrics(o.db, s.actor)]);
     const okMsg = OK_MESSAGES[str((req.query as Record<string, unknown>).ok)];
-    return html(reply, dashboardView(ctxOf(s), stats, recent, visibleMarkets(s.actor), {
+    return html(reply, dashboardView(ctxOf(s), stats, recent, visibleMarkets(s.actor), metrics, {
       metaOn: !!o.publisher,
       geminiOn: !!o.generator,
       paused: s.paused,
@@ -363,6 +364,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
         canGenerate: canReview(s.actor, d.item.market),
       },
       changes,
+      metric: d.item.state === 'PUBLISHED' ? await metricOf(o.db, id) : null,
       draft: extra.draft, flash: extra.flash,
     }), extra.code ?? 200);
   }
@@ -436,7 +438,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   app.post('/admin/pause', adminOnly(async (s, req, reply) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const pause = str(b.action) === 'pause';
-    if (pause && b.confirm !== '1') return html(reply, dashboardView(ctxOf(s), await getStats(o.db, s.actor), await svc.listAudit(o.db, s.actor, 6), visibleMarkets(s.actor), { metaOn: !!o.publisher, geminiOn: !!o.generator, paused: s.paused, isAdmin: true, flash: { kind: 'warn', text: 'Hãy tick xác nhận trước khi bật công tắc tạm dừng.' } }), 422);
+    if (pause && b.confirm !== '1') return html(reply, dashboardView(ctxOf(s), await getStats(o.db, s.actor), await svc.listAudit(o.db, s.actor, 6), visibleMarkets(s.actor), await listMetrics(o.db, s.actor), { metaOn: !!o.publisher, geminiOn: !!o.generator, paused: s.paused, isAdmin: true, flash: { kind: 'warn', text: 'Hãy tick xác nhận trước khi bật công tắc tạm dừng.' } }), 422);
     await setPaused(o.db, pause, s.actor.email);
     void notifyAll(pause ? `⏸️ ${s.actor.name} đã BẬT công tắc tạm dừng PeaPod` : `▶️ ${s.actor.name} đã TẮT công tắc tạm dừng PeaPod`);
     return reply.redirect(`/?ok=${pause ? 'paused' : 'resumed'}`);
