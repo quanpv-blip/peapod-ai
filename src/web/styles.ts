@@ -319,6 +319,9 @@ table.users td{vertical-align:middle}
 .fb-card ul{margin:0;padding-left:18px}
 .card-prev{margin-top:16px;text-align:center}
 .reel-prev{display:block;margin:0 auto;width:270px;max-width:100%;aspect-ratio:9/16;background:#000;border-radius:var(--radius);border:1px solid var(--line)}
+.row-gap{display:flex;align-items:center;gap:12px}
+.studio-frame{display:block;width:100%;height:calc(100vh - 230px);min-height:620px;border:1px solid var(--line);border-radius:var(--radius);background:#000}
+@media (max-width:900px){.studio-frame{height:70vh;min-height:480px}}
 .card-prev img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
 .card-prev .small{margin-top:8px}
 .diff-b{margin-bottom:14px}

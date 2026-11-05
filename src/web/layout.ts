@@ -10,7 +10,7 @@ export interface Flash {
   text: string;
 }
 
-export type NavKey = 'dash' | 'queue' | 'schedule' | 'campaign' | 'quota' | 'audit' | 'users' | 'costs' | 'settings' | 'account';
+export type NavKey = 'dash' | 'queue' | 'schedule' | 'video' | 'studio' | 'campaign' | 'quota' | 'audit' | 'users' | 'costs' | 'settings' | 'account';
 
 export interface PageCtx {
   title: string;
@@ -32,6 +32,8 @@ const PATH: Record<string, string> = {
   dash: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   queue: '<path d="M4 6h16M4 12h11M4 18h7"/><path d="m16 16 2 2 4-4"/>',
   schedule: '<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 3v3M16 3v3"/>',
+  video: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  studio: '<path d="M4 4h16v12H4z"/><path d="M9 20h6M12 16v4"/><path d="m10 8 5 3-5 3z"/>',
   campaign: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="5"/>',
   audit: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
   costs: '<path d="M4 20h16"/><path d="M7 16V11M12 16V7M17 16v-3"/>',
@@ -82,6 +84,8 @@ export function page(ctx: PageCtx, body: Safe): string {
             ${item('campaign', '/create', 'Tạo bài viết mới')}
             ${item('quota', '/quota', 'Hạn mức & credit')}
             ${item('schedule', '/schedule', 'Lịch đăng')}
+            ${item('video', '/video', 'Video 9:16')}
+            ${item('studio', '/studio', 'Biên tập video')}
             ${admin ? html`<div class="nav-g">Quản trị</div>${item('costs', '/costs', 'Chi phí AI')}${item('settings', '/settings', 'Cài đặt')}${item('users', '/users', 'Người dùng')}${item('audit', '/audit', 'Nhật ký kiểm toán')}` : html`<div class="nav-g">Hồ sơ</div>${item('audit', '/audit', 'Nhật ký kiểm toán')}`}
           </nav>
           <div class="side-f">

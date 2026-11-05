@@ -5,7 +5,7 @@ import { fromLocalInput, nextBusinessSlot, DEFAULT_LOCAL_TIME, toLocalInput } fr
 import type { Market } from '../domain/package.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import * as svc from '../services/contents.ts';
-import { AppError } from '../services/contents.ts';
+import { AppError, type ContentRow } from '../services/contents.ts';
 import { getStats, pendingCount } from '../services/stats.ts';
 import { cancelScheduled, publishApproved, publishOne, reconcileScheduled, type PublisherDeps } from '../services/publish.ts';
 import { generateCampaign, generateNews, generateTopic } from '../services/generate.ts';
@@ -41,6 +41,8 @@ import { detailView } from './views/detail.ts';
 import { loginView } from './views/login.ts';
 import { queueView, type RowInfo } from './views/queue.ts';
 import { usersView } from './views/users.ts';
+import { videoView, type VideoRowInfo } from './views/video.ts';
+import { studioView } from './views/studio.ts';
 
 export interface WebOptions {
   db: pg.Pool;
@@ -87,6 +89,18 @@ function noteFail(key: string, now = Date.now()) {
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** Chỉ chấp nhận địa chỉ http(s) hợp lệ cho khung Remotion Studio; sai thì coi như chưa cấu hình. */
+function studioEmbedUrl(raw: string | undefined): string | null {
+  const v = raw?.trim();
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
 const isApprover = (a: Actor) => a.roles.some((r) => r.startsWith('approver_'));
 const isAdmin = (a: Actor) => a.roles.includes('admin');
 
@@ -104,11 +118,14 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     );
   });
 
+  // Trang Biên tập video nhúng Remotion Studio: chỉ cho khung nhúng đúng một nguồn đã cấu hình.
+  const studioUrl = studioEmbedUrl(process.env.REMOTION_STUDIO_URL);
+  const csp = `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; media-src 'self'; form-action 'self'; base-uri 'none'; ${studioUrl ? `frame-src ${new URL(studioUrl).origin}; ` : ''}frame-ancestors 'none'`;
   app.addHook('onSend', async (_req, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'same-origin');
-    reply.header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; media-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+    reply.header('Content-Security-Policy', csp);
     if (!reply.hasHeader('Cache-Control')) reply.header('Cache-Control', 'no-store');
     return payload;
   });
@@ -464,13 +481,63 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   const reelDeps = () => ({ db: o.db, mediaDir: process.env.MEDIA_DIR ?? './media', renderReel: (input: Parameters<typeof renderReelRemote>[0]) => renderReelRemote(input, remoteCardConfigFromEnv()!) });
   app.post('/contents/:id/reel', guarded(async (s, req, reply) => {
     const id = idOf(req);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    // Quay về trang Video (nếu bấm từ đó) hoặc trang bài. Chỉ hai đích cố định, không nhận URL từ người dùng.
+    const back = (q: string) => (str(b.back) === 'video' ? `/video?ok=${q}` : `/contents/${id}?ok=${q}`);
     const d = await svc.getContent(o.db, s.actor, id);
     if (!canReview(s.actor, d.item.market)) throw new AppError('FORBIDDEN', 'Bạn không có quyền dựng video cho thị trường này');
-    if (!remoteCardConfigFromEnv()) return reply.redirect(`/contents/${id}?ok=reel-off`);
-    if ((await reelStatus(o.db, id))?.state === 'pending') return reply.redirect(`/contents/${id}?ok=reel-busy`);
+    if (!remoteCardConfigFromEnv()) return reply.redirect(back('reel-off'));
+    if ((await reelStatus(o.db, id))?.state === 'pending') return reply.redirect(back('reel-busy'));
     startReelJob(reelDeps(), id, d.item.current_revision, d.package);
-    return reply.redirect(`/contents/${id}?ok=reel-started`);
+    return reply.redirect(back('reel-started'));
   }));
+
+  // --- trang Video 9:16: danh sách bài và trạng thái video ---
+  app.get('/video', guarded(async (s, req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const okMsg = OK_MESSAGES[str(q.ok)];
+    const filter = { state: str(q.state), market: str(q.market) };
+    const page = pageInfo(q.page, await svc.countContents(o.db, s.actor, filter), PAGE_SIZE);
+    const rows = await svc.listContents(o.db, s.actor, { ...filter, limit: page.size, offset: page.offset });
+    const info = await videoInfo(rows);
+    return html(reply, videoView({
+      ctx: ctxOf(s), rows, info, filter, page, markets: visibleMarkets(s.actor),
+      reelOn: !!remoteCardConfigFromEnv(),
+      canBuild: (m) => canReview(s.actor, m as Market),
+      flash: okMsg ? { kind: 'ok', text: okMsg } : undefined,
+    }));
+  }));
+
+  async function videoInfo(rows: ContentRow[]): Promise<Map<string, VideoRowInfo>> {
+    const out = new Map<string, VideoRowInfo>();
+    if (!rows.length) return out;
+    const ids = rows.map((r) => r.id);
+    const [heads, vids, reels] = await Promise.all([
+      o.db.query<{ content_id: string; headline: string }>(
+        `SELECT r.content_id, r.package->'post'->>'headline' AS headline
+           FROM content_revision r JOIN content_item i ON i.id = r.content_id AND i.current_revision = r.revision
+          WHERE r.content_id = ANY($1)`, [ids]),
+      o.db.query<{ content_id: string; revision: number }>(
+        "SELECT DISTINCT ON (content_id) content_id, revision FROM media_asset WHERE kind = 'VIDEO_FINAL' AND content_id = ANY($1) ORDER BY content_id, id DESC", [ids]),
+      Promise.all(ids.map((id) => reelStatus(o.db, id))),
+    ]);
+    const headline = new Map(heads.rows.map((x) => [String(x.content_id), x.headline]));
+    const built = new Map(vids.rows.map((x) => [String(x.content_id), Number(x.revision)]));
+    rows.forEach((r, n) => {
+      const k = String(r.id);
+      const rev = built.get(k) ?? null;
+      out.set(k, {
+        headline: headline.get(k) ?? '(không có tiêu đề)',
+        built: rev === r.current_revision,
+        builtRevision: rev !== null && rev !== r.current_revision ? rev : null,
+        reel: reels[n] ?? null,
+      });
+    });
+    return out;
+  }
+
+  // --- tab Biên tập video: nhúng Remotion Studio ---
+  app.get('/studio', guarded(async (s, _req, reply) => html(reply, studioView({ ctx: ctxOf(s), studioUrl }))));
   app.get('/contents/:id/reel', guarded(async (s, req, reply) => {
     const id = idOf(req);
     const d = await svc.getContent(o.db, s.actor, id);
