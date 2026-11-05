@@ -5,10 +5,11 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { languageMatchesMarket, unknownSources, validatePackage, type ContentPackage, type Market } from '../domain/package.ts';
-import { NEWS_RULES, NEWS_VOICE, newsUserPrompt, TOPIC_RULES, topicUserPrompt, unusedItems } from '../domain/editorial.ts';
+import { NEWS_EXAMPLE, NEWS_RULES, NEWS_VOICE, newsUserPrompt, TOPIC_RULES, topicUserPrompt, unusedItems } from '../domain/editorial.ts';
 import { campaignSourceAllowed, type AppSettings } from '../domain/appSettings.ts';
 import { dedupeByUrl, parseFeed, type FeedItem } from '../domain/rss.ts';
 import { sanitize } from '../domain/sanitizer.ts';
+import { polishPackage } from '../domain/polish.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import { renderCard, cardInputFrom, CARD_H, CARD_W } from '../media/card.ts';
 import { remoteCardConfigFromEnv, renderCardRemote } from '../media/remote-card.ts';
@@ -101,7 +102,7 @@ async function generateFromItem(
   try {
     const gen = await deps.gemini.generateJson({
       model,
-      system: `${NEWS_RULES}\n\n${NEWS_VOICE[market]}`,
+      system: `${NEWS_RULES}\n\n${NEWS_VOICE[market]}\n\n${NEWS_EXAMPLE[market]}`,
       user: newsUserPrompt(market, `1. ${sanitized.text}\n   URL: ${item.url}`),
       schema: deps.schema,
     });
@@ -110,7 +111,7 @@ async function generateFromItem(
 
     const v = validatePackage(gen.json);
     if (!v.ok) return { title, outcome: 'skipped', detail: `schema: ${v.errors[0]}` };
-    const pkg = v.value;
+    const pkg = polishPackage(v.value);
     if (pkg.market !== market) return { title, outcome: 'skipped', detail: 'sai thị trường' };
     if (unknownSources(pkg, [item.url]).length) return { title, outcome: 'skipped', detail: 'nguồn không nằm trong nguồn đã cung cấp' };
     if (!languageMatchesMarket(pkg.post.body, market)) return { title, outcome: 'skipped', detail: 'sai ngôn ngữ' };
@@ -216,7 +217,7 @@ async function generateFromBrief(
 
     const v = validatePackage(gen.json);
     if (!v.ok) return { title, outcome: 'skipped', detail: `schema: ${v.errors[0]}` };
-    const pkg = v.value;
+    const pkg = polishPackage(v.value);
     if (pkg.market !== market) return { title, outcome: 'skipped', detail: 'sai thị trường' };
     if (unknownSources(pkg, items.map((i) => i.url)).length) return { title, outcome: 'skipped', detail: 'nguồn không nằm trong tin đã thu thập' };
     if (!languageMatchesMarket(pkg.post.body, market)) return { title, outcome: 'skipped', detail: 'sai ngôn ngữ' };
@@ -269,5 +270,5 @@ export async function generateTopic(deps: GenerateDeps, req: TopicRequest): Prom
       return `${n + 1}. ${clean.text}\n   URL: ${it.url}`;
     })
     .join('\n');
-  return generateFromBrief(deps, s, req.market, items, `${TOPIC_RULES}\n\n${NEWS_VOICE[req.market]}`, topicUserPrompt(req.market, req.topic.trim(), brief), req.model, 'NEWS', title);
+  return generateFromBrief(deps, s, req.market, items, `${TOPIC_RULES}\n\n${NEWS_VOICE[req.market]}\n\n${NEWS_EXAMPLE[req.market]}`, topicUserPrompt(req.market, req.topic.trim(), brief), req.model, 'NEWS', title);
 }

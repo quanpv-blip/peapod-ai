@@ -6,6 +6,8 @@ import type { ContentPackage, Market } from '../domain/package.ts';
 import { bulkApprovable, scoreQuality } from '../domain/quality.ts';
 import { planSlots } from '../domain/bulk.ts';
 import { listMetrics, metricOf } from '../services/metrics.ts';
+import { rewritePost } from '../services/rewrite.ts';
+import { isRewriteStyle } from '../domain/editorial.ts';
 import { GenJobs } from '../services/genJobs.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import * as svc from '../services/contents.ts';
@@ -69,6 +71,7 @@ const OK_MESSAGES: Record<string, string> = {
   rejected: 'Đã từ chối bài.',
   cancelled: 'Đã hủy bài.',
   edited: 'Đã lưu chỉnh sửa. Bài đang chờ duyệt.',
+  rewritten: 'AI đã viết lại bài. Xem mục "So với bản trước" để so sánh; bài đang chờ duyệt lại.',
   published: 'Đã hẹn bài lên Trang Facebook.',
   paused: 'Đã BẬT công tắc tạm dừng: không hẹn bài mới và không sinh bài mới.',
   resumed: 'Đã TẮT công tắc tạm dừng. Hệ thống hoạt động bình thường.',
@@ -355,6 +358,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
       blockedByFourEyes: svcOpts.fourEyesMarkets.includes(d.item.market) && d.editedBy === s.actor.email,
       scheduleDefault: toLocalInput(d.item.scheduled_at ?? slot, d.item.market),
       canPublish: !!o.publisher && canReview(s.actor, d.item.market) && d.item.state === 'APPROVED',
+      canRewrite: !!o.generator && canReview(s.actor, d.item.market),
       fbUrl: d.item.fb_post_id ? `https://www.facebook.com/${d.item.fb_post_id}` : undefined,
       hasCard: (card.rowCount ?? 0) > 0,
       reel: {
@@ -425,6 +429,22 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   }));
 
   app.post('/contents/:id/request-changes', action('changes', (s, id, b) => svc.requestChanges(o.db, s.actor, id, str(b.note))));
+  // Viết lại bằng AI: tạo revision mới (cần quyền sửa), ở lại trang bài để so sánh ngay.
+  app.post('/contents/:id/rewrite', guarded(async (s, req, reply) => {
+    const id = idOf(req);
+    const style = str((req.body as Record<string, unknown> | undefined)?.style);
+    try {
+      if (!o.generator) throw new AppError('INVALID', 'Chưa cấu hình khóa Gemini (GEMINI_API_KEY).');
+      if (!isRewriteStyle(style)) throw new AppError('INVALID', 'Hướng chỉnh không hợp lệ.');
+      await rewritePost({ db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, model: o.generator.model }, s.actor, id, style);
+      return reply.redirect(`/contents/${id}?ok=rewritten`);
+    } catch (e) {
+      if (!(e instanceof AppError)) throw e;
+      if (e.code === 'NOT_FOUND') return html(reply, notFound(s), 404);
+      return showDetail(s, reply, id, { flash: { kind: 'err', text: e.message }, code: CODE[e.code] });
+    }
+  }));
+
   app.post('/contents/:id/reject', action('rejected', (s, id, b) => svc.reject(o.db, s.actor, id, str(b.note))));
   app.post('/contents/:id/cancel', action('cancelled', async (s, id, b) => {
     const d = await svc.getContent(o.db, s.actor, id);

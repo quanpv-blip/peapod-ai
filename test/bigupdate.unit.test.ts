@@ -8,18 +8,23 @@ import { queueView, type RowInfo } from '../src/web/views/queue.ts';
 import { pageInfo } from '../src/domain/paging.ts';
 import type { ContentRow } from '../src/services/contents.ts';
 
-const GOOD_BODY = `Công ty A vừa công bố nền tảng dữ liệu mới dành cho doanh nghiệp vừa và nhỏ, cho phép hợp nhất dữ liệu bán hàng và vận hành trong một bảng điều khiển duy nhất.
+export const GOOD_BODY = `Một nền tảng dữ liệu mới hứa hẹn gom báo cáo bán hàng và vận hành về một màn hình duy nhất.
+
+📌 Điều gì đang diễn ra: Công ty A vừa công bố nền tảng dữ liệu dành cho doanh nghiệp vừa và nhỏ, cho phép hợp nhất dữ liệu bán hàng và vận hành trong một bảng điều khiển, bắt đầu cung cấp từ quý tới.
+
 Điểm chính:
-• Tích hợp nhanh với các phần mềm kế toán phổ biến trên thị trường.
-• Báo cáo cập nhật theo thời gian thực cho từng chi nhánh.
-• Phân quyền truy cập theo vai trò, có nhật ký thao tác.
-Nhận định của chúng tôi: Xu hướng hợp nhất dữ liệu sẽ giúp doanh nghiệp ra quyết định nhanh hơn.
-Nguồn: VnExpress`;
+▸ Tích hợp nhanh với các phần mềm kế toán phổ biến trên thị trường.
+▸ Báo cáo cập nhật theo thời gian thực cho từng chi nhánh.
+▸ Phân quyền truy cập theo vai trò, có nhật ký thao tác đầy đủ.
+
+💡 Góc nhìn của chúng tôi: Với doanh nghiệp nhiều chi nhánh, dữ liệu rời rạc là nguyên nhân chính khiến báo cáo đến muộn. Có thể thử với một chi nhánh trước và đo thời gian ra báo cáo trước và sau khi dùng.
+
+🔗 Nguồn: VnExpress`;
 
 const pkg = (over: Partial<ContentPackage['post']> = {}, extra: Partial<ContentPackage> = {}): ContentPackage => ({
   market: 'VN',
   topic_summary: 't',
-  post: { headline: 'Công ty A ra mắt nền tảng dữ liệu mới', body: GOOD_BODY, call_to_action: 'Bạn nghĩ sao?', hashtags: ['#CN'], ...over },
+  post: { headline: 'Công ty A ra mắt nền tảng dữ liệu mới', body: GOOD_BODY, call_to_action: 'Báo cáo của bạn đang mất bao lâu để hoàn thành mỗi tuần?', hashtags: ['#DuLieu', '#ChuyenDoiSo', '#SME'], ...over },
   sources: [{ title: 'VnExpress', url: 'https://vnexpress.net/a' }],
   claims_to_verify: [],
   media: { engine: 'NONE' },

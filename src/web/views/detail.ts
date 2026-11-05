@@ -1,4 +1,5 @@
 import { languageMatchesMarket } from '../../domain/package.ts';
+import { REWRITE_STYLES } from '../../domain/editorial.ts';
 import { GRADE_TEXT, scoreQuality } from '../../domain/quality.ts';
 import type { ContentDetail } from '../../services/contents.ts';
 import { ACTION, FORMAT, marketTag, status, when, zoneLabel } from '../components.ts';
@@ -27,6 +28,8 @@ export interface DetailView {
   hasCard?: boolean;
   /** Video Reels 9:16: trạng thái dựng, đã có video chưa, đã bật dịch vụ chưa, người xem có được dựng không. */
   reel?: { status: ReelStatus | null; hasVideo: boolean; configured: boolean; canGenerate: boolean };
+  /** Hiện khung "Viết lại bằng AI" (có khóa Gemini và người xem có quyền sửa). */
+  canRewrite?: boolean;
   /** Số liệu tương tác từ Meta (bài đã đăng). */
   metric?: { reactions: number; comments: number; shares: number; impressions: number | null; fetchedAt: Date } | null;
   /** Khác biệt với bản trước (nếu có). */
@@ -102,6 +105,15 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
   </div></div>`;
 
   const dr = v.draft ?? { headline: p.post.headline, body: p.post.body, call_to_action: p.post.call_to_action, hashtags: p.post.hashtags.join(' ') };
+  const rewriteBox = canEdit && v.canRewrite
+    ? html`<div class="panel"><div class="panel-h">Viết lại bằng AI</div><div class="panel-b">
+        <form method="post" action="/contents/${it.id}/rewrite" data-reel-form>${hidden}
+          <div class="field"><label for="rwstyle">Hướng chỉnh</label><select id="rwstyle" name="style">${Object.entries(REWRITE_STYLES).map(([k, x]) => html`<option value="${k}">${x.label}</option>`)}</select>
+            <div class="hint">AI chỉ dùng dữ kiện có sẵn trong bài, giữ nguyên nguồn. Kết quả thành bản mới, bài về "Chờ duyệt" và có so sánh với bản trước. Mất khoảng 10 đến 20 giây.</div></div>
+          <button class="btn" type="submit">Viết lại</button>
+        </form></div></div>`
+    : empty;
+
   const editForm = canEdit
     ? html`<div class="panel"><div class="panel-h">Chỉnh sửa nội dung</div><div class="panel-b">
         ${it.state !== 'IN_REVIEW' ? html`<div class="notice warn">Bài đã ở trạng thái "${stateText(it.state)}". Lưu chỉnh sửa sẽ hủy duyệt hiện tại và đưa bài về "Chờ duyệt".</div>` : empty}
@@ -179,7 +191,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
         <div>
           <div class="panel"><div class="panel-h">Xem trước bài đăng</div><div class="panel-b">${preview}${v.hasCard ? html`<div class="card-prev"><img src="/contents/${it.id}/card" alt="Ảnh thẻ của bài" width="540" height="675" loading="lazy"><div class="small muted">Ảnh thẻ dựng tự động. Đây là ảnh sẽ đăng kèm bài.</div></div>` : empty}</div></div>
           ${reelPanel(v)}
-          ${diffPanel(v.changes)}${sources}${editForm}
+          ${diffPanel(v.changes)}${sources}${rewriteBox}${editForm}
         </div>
         <aside>${decision}${publishBox}${metricPanel(v)}${quality}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
       </div>
