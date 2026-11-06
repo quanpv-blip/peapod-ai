@@ -4,7 +4,7 @@
 import type pg from 'pg';
 import type { Actor } from '../auth.ts';
 import { languageMatchesMarket, validatePackage, type ContentPackage } from '../domain/package.ts';
-import { NEWS_EXAMPLE, NEWS_VOICE, REWRITE_RULES, rewriteUserPrompt, type RewriteStyle } from '../domain/editorial.ts';
+import { FEEDBACK_MAX, FEEDBACK_MIN, NEWS_EXAMPLE, NEWS_VOICE, REWRITE_RULES, rewriteFeedbackPrompt, rewriteUserPrompt, type RewriteStyle } from '../domain/editorial.ts';
 import { polishPackage } from '../domain/polish.ts';
 import { sanitize } from '../domain/sanitizer.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
@@ -28,7 +28,9 @@ export interface RewriteDeps {
 }
 
 /** Viết lại bài #id; trả về số revision mới. Ném AppError với thông điệp tiếng Việt khi không làm được. */
-export async function rewritePost(deps: RewriteDeps, actor: Actor, id: number, style: RewriteStyle): Promise<number> {
+export async function rewritePost(deps: RewriteDeps, actor: Actor, id: number, how: RewriteStyle | { feedback: string }): Promise<number> {
+  const feedback = typeof how === 'string' ? null : how.feedback.trim();
+  if (feedback !== null && (feedback.length < FEEDBACK_MIN || feedback.length > FEEDBACK_MAX)) throw new AppError('INVALID', `Góp ý cần từ ${FEEDBACK_MIN} đến ${FEEDBACK_MAX} ký tự.`);
   const d = await getContent(deps.db, actor, id);
   if (await isPaused(deps.db)) throw new AppError('CONFLICT', 'Công tắc tạm dừng đang bật: không gọi AI.');
   const s = await getAppSettings(deps.db);
@@ -44,7 +46,7 @@ export async function rewritePost(deps: RewriteDeps, actor: Actor, id: number, s
     gen = await deps.gemini.generateJson({
       model: deps.model,
       system: `${REWRITE_RULES}\n\n${NEWS_VOICE[market]}\n\n${NEWS_EXAMPLE[market]}`,
-      user: rewriteUserPrompt(market, style, post, orig.sources),
+      user: feedback !== null ? rewriteFeedbackPrompt(market, sanitize(feedback).text, post, orig.sources) : rewriteUserPrompt(market, how as RewriteStyle, post, orig.sources),
       schema: deps.schema,
     });
   } catch (e) {
@@ -57,7 +59,7 @@ export async function rewritePost(deps: RewriteDeps, actor: Actor, id: number, s
   const next: ContentPackage = polishPackage({ ...orig, post: v.value.post });
   if (!languageMatchesMarket(next.post.body, market)) throw new AppError('INVALID', 'AI viết sai ngôn ngữ của thị trường, hãy thử lại.');
   if (market === 'VN' && !looksVietnamese(next.post.body)) throw new AppError('INVALID', 'AI viết sai ngôn ngữ của thị trường, hãy thử lại.');
-  if (next.post.body.trim() === orig.post.body.trim() && next.post.headline === orig.post.headline) throw new AppError('INVALID', 'AI không thay đổi gì so với bản hiện tại, hãy chọn hướng chỉnh khác.');
+  if (next.post.body.trim() === orig.post.body.trim() && next.post.headline === orig.post.headline) throw new AppError('INVALID', 'AI không thay đổi gì so với bản hiện tại, hãy nêu góp ý cụ thể hơn hoặc chọn hướng chỉnh khác.');
 
   return saveEdit(deps.db, actor, id, d.item.current_revision, { headline: next.post.headline, body: next.post.body, call_to_action: next.post.call_to_action, hashtags: next.post.hashtags });
 }

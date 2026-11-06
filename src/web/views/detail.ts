@@ -1,13 +1,14 @@
 import { languageMatchesMarket } from '../../domain/package.ts';
 import { REWRITE_STYLES } from '../../domain/editorial.ts';
 import { GRADE_TEXT, scoreQuality } from '../../domain/quality.ts';
+import { classifyPillar, PILLAR_LABEL, riskFlags } from '../../domain/strategy.ts';
 import type { ContentDetail } from '../../services/contents.ts';
 import { ACTION, FORMAT, marketTag, status, when, zoneLabel } from '../components.ts';
 import { empty, html, type Safe } from '../html.ts';
 import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
 import type { DiffOp, PackageDiff } from '../../domain/diff.ts';
 import type { ReelStatus } from '../../domain/reel.ts';
-import { buildForm, reelErrorBox, reelProgress } from './reel-parts.ts';
+import { buildForm, reelErrorBox, reelNoteBox, reelProgress } from './reel-parts.ts';
 
 export interface DetailView {
   ctx: Omit<PageCtx, 'title' | 'nav'>;
@@ -45,11 +46,12 @@ function reelPanel(v: DetailView): Safe {
   return html`<div class="panel"><div class="panel-h">Video Reels (9:16)</div><div class="panel-b">
     ${active ? reelProgress(id, st, v.csrf, { poll: true }) : empty}
     ${st?.state === 'error' ? reelErrorBox(st.error ?? 'Lỗi không xác định khi dựng video.') : empty}
+    ${st?.note && st.state !== 'error' ? reelNoteBox(st.note) : empty}
     ${st?.state === 'cancelled' ? html`<div class="notice">Đã hủy việc dựng. Video cũ (nếu có) vẫn dùng được.</div>` : empty}
     ${active ? empty : r.hasVideo ? html`<video class="reel-prev" controls playsinline preload="metadata" src="/contents/${id}/reel"></video>
-      <p class="small"><a href="/contents/${id}/reel" download>Tải video (MP4)</a></p>` : html`<p class="hint">Chưa có video. Video là ảnh dọc 1080×1920, 15 giây, dựng từ cùng nội dung bài.</p>`}
+      <p class="small"><a href="/contents/${id}/reel" download>Tải video (MP4)</a></p>` : html`<p class="hint">Chưa có video. Video là ảnh dọc 1080×1920, dựng từ cùng nội dung bài; có lời đọc và phụ đề thì dài theo lời đọc, không có thì 15 giây.</p>`}
     ${!r.configured ? html`<p class="hint">Chưa bật dịch vụ Remotion (REMOTION_RENDER_URL), nên chưa dựng được video.</p>` : empty}
-    ${r.canGenerate && r.configured && !active ? buildForm(id, v.csrf, r.hasVideo ? 'Dựng lại video' : 'Dựng video 9:16') : empty}
+    ${r.canGenerate && r.configured && !active ? buildForm(id, v.csrf, r.hasVideo ? 'Dựng lại video' : 'Dựng video 9:16', undefined, true) : empty}
   </div></div>`;
 }
 
@@ -89,6 +91,11 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
     <p class="hint">Điểm chấm theo quy tắc biên tập (độ dài, cấu trúc, từ cấm, nguồn, khẳng định cần kiểm).</p>
   </div></div>`;
 
+  const flags = riskFlags(p);
+  const risk = html`<div class="panel"><div class="panel-h">Mức đọc <span class="tag">${PILLAR_LABEL[classifyPillar(p)]}</span></div><div class="panel-b">
+    ${flags.length ? html`<ul class="q-list">${flags.map((f) => html`<li class="${f.level === 'high' ? 'bad' : 'warn'}">${f.text}</li>`)}</ul>` : html`<span class="muted small">Không có dấu hiệu rủi ro đặc biệt. Vẫn cần đọc trước khi duyệt.</span>`}
+  </div></div>`;
+
   const lang = languageMatchesMarket(p.post.body, it.market);
   const checks = html`<ul class="checks">
     ${check(true, 'Đúng cấu trúc dữ liệu (schema)')}
@@ -106,16 +113,18 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
 
   const dr = v.draft ?? { headline: p.post.headline, body: p.post.body, call_to_action: p.post.call_to_action, hashtags: p.post.hashtags.join(' ') };
   const rewriteBox = canEdit && v.canRewrite
-    ? html`<div class="panel"><div class="panel-h">Viết lại bằng AI</div><div class="panel-b">
+    ? html`<details class="panel fold"><summary class="panel-h">Viết lại bằng AI <span class="small muted">chọn hướng chỉnh hoặc nêu góp ý</span></summary><div class="panel-b">
         <form method="post" action="/contents/${it.id}/rewrite" data-reel-form>${hidden}
           <div class="field"><label for="rwstyle">Hướng chỉnh</label><select id="rwstyle" name="style">${Object.entries(REWRITE_STYLES).map(([k, x]) => html`<option value="${k}">${x.label}</option>`)}</select>
             <div class="hint">AI chỉ dùng dữ kiện có sẵn trong bài, giữ nguyên nguồn. Kết quả thành bản mới, bài về "Chờ duyệt" và có so sánh với bản trước. Mất khoảng 10 đến 20 giây.</div></div>
+          <div class="field"><label for="rwfb">Hoặc nêu góp ý cụ thể (nếu điền, dùng góp ý thay cho hướng chỉnh)</label>
+            <textarea id="rwfb" name="feedback" rows="3" maxlength="500" placeholder="Ví dụ: rút gọn phần mở đầu, nêu rõ ai bị ảnh hưởng, bỏ câu so sánh với đối thủ"></textarea></div>
           <button class="btn" type="submit">Viết lại</button>
-        </form></div></div>`
+        </form></div></details>`
     : empty;
 
   const editForm = canEdit
-    ? html`<div class="panel"><div class="panel-h">Chỉnh sửa nội dung</div><div class="panel-b">
+    ? html`<details class="panel fold"${v.draft ? ' open' : ''}><summary class="panel-h">Chỉnh sửa nội dung <span class="small muted">tiêu đề, thân bài, lời kêu gọi, hashtag</span></summary><div class="panel-b">
         ${it.state !== 'IN_REVIEW' ? html`<div class="notice warn">Bài đã ở trạng thái "${stateText(it.state)}". Lưu chỉnh sửa sẽ hủy duyệt hiện tại và đưa bài về "Chờ duyệt".</div>` : empty}
         <form method="post" action="/contents/${it.id}/edit">${hidden}<input type="hidden" name="revision" value="${it.current_revision}">
           <div class="field"><label for="headline">Tiêu đề</label><input id="headline" name="headline" type="text" maxlength="120" required value="${dr.headline}"></div>
@@ -123,7 +132,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
           <div class="field"><label for="cta">Lời kêu gọi hành động</label><input id="cta" name="call_to_action" type="text" maxlength="200" required value="${dr.call_to_action}"></div>
           <div class="field"><label for="tags">Hashtag</label><input id="tags" name="hashtags" type="text" value="${dr.hashtags}"><div class="hint">Cách nhau bằng dấu cách, tối đa 8.</div></div>
           <button class="btn" type="submit">Lưu chỉnh sửa</button>
-        </form></div></div>`
+        </form></div></details>`
     : empty;
 
   const needClaims = p.claims_to_verify.length > 0;
@@ -193,7 +202,7 @@ ${p.post.call_to_action}<span class="fb-tags">${p.post.hashtags.join(' ')}</span
           ${reelPanel(v)}
           ${diffPanel(v.changes)}${sources}${rewriteBox}${editForm}
         </div>
-        <aside>${decision}${publishBox}${metricPanel(v)}${quality}${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</aside>
+        <aside class="side-sticky">${decision}${publishBox}${metricPanel(v)}${risk}${quality}<details class="fold-group"><summary>Thông tin bài, kiểm tra tự động, hủy bài và lịch sử</summary>${facts}<div class="panel"><div class="panel-h">Kiểm tra tự động</div><div class="panel-b">${checks}<p class="hint">Kiểm tra tự động không thay thế việc đọc kỹ nội dung.</p></div></div>${cancelBox}${history}</details></aside>
       </div>
     </div>`,
   );

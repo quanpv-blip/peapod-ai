@@ -1,5 +1,6 @@
 // Script giao diện chung, phục vụ tại /assets/ui.js (CSP chỉ cho script từ chính máy chủ).
 // (1) Hàng chờ: chọn tất cả, đếm số bài đã chọn, khóa nút khi gửi; (2) theo dõi tiến độ việc "Tạo bản tin" và tải lại khi xong.
+import { MOTION_JS } from './motion-js.ts';
 export const UI_JS = `(function () {
   'use strict';
   function q(sel, root) { return (root || document).querySelector(sel); }
@@ -62,4 +63,4 @@ export const UI_JS = `(function () {
     }
   }
 })();
-`;
+` + MOTION_JS;

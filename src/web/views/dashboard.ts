@@ -3,7 +3,7 @@ import { marketTag, span, STATE, when } from '../components.ts';
 import { empty, html, type Safe } from '../html.ts';
 import { flashBox, page, type Flash, type PageCtx } from '../layout.ts';
 import type { AuditRow } from './audit.ts';
-import { ACTION } from '../components.ts';
+import { ACTION, actorLabel } from '../components.ts';
 import { bestSlot, engagement, MIN_POSTS_PER_SLOT, summarize, type PostMetric } from '../../domain/insights.ts';
 
 export interface SystemView {
@@ -27,8 +27,10 @@ function kpi(label: string, tone: string, value: string | number, unit: string, 
 export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, recent: AuditRow[], markets: ('VN' | 'JP')[], metrics: PostMetric[], sys?: SystemView): string {
   const dot = (ok: boolean, text: string) => html`<li class="${ok ? 'pass' : 'fail'}"><span class="k">${ok ? '✓' : '✕'}</span><span>${text}</span></li>`;
   const hidden = html`<input type="hidden" name="_csrf" value="${ctx.csrf}">`;
+  // Khối điều khiển hệ thống không chiếm đầu trang: gập lại khi mọi thứ bình thường, mở sẵn khi đang tạm dừng hoặc thiếu cấu hình.
+  const sysOpen = !!sys && (sys.paused || !sys.metaOn || !sys.geminiOn);
   const sysPanel = sys
-    ? html`<div class="panel"><div class="panel-h">Hệ thống</div><div class="panel-b">
+    ? html`<details class="panel fold"${sysOpen ? ' open' : ''}><summary class="panel-h">Hệ thống <span class="small muted">${sys.paused ? 'đang tạm dừng' : sysOpen ? 'cần kiểm tra cấu hình' : 'hoạt động bình thường'}</span></summary><div class="panel-b">
         ${flashBox(sys.flash)}
         <ul class="checks">
           ${dot(sys.metaOn, sys.metaOn ? 'Đăng lên Trang Facebook (Meta): đã cấu hình' : 'Đăng lên Trang Facebook (Meta): chưa cấu hình')}
@@ -37,20 +39,43 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
         </ul>
         ${sys.isAdmin
           ? sys.paused
-            ? html`<form method="post" action="/admin/pause" class="actions" style="margin-top:12px">${hidden}<input type="hidden" name="action" value="resume"><button class="btn" type="submit">Tắt công tắc, cho hoạt động lại</button></form>`
-            : html`<form method="post" action="/admin/pause" style="margin-top:12px">${hidden}<input type="hidden" name="action" value="pause">
+            ? html`<form method="post" action="/admin/pause" class="actions u-mt12">${hidden}<input type="hidden" name="action" value="resume"><button class="btn" type="submit">Tắt công tắc, cho hoạt động lại</button></form>`
+            : html`<form class="u-mt12" method="post" action="/admin/pause">${hidden}<input type="hidden" name="action" value="pause">
                 <label class="check"><input type="checkbox" name="confirm" value="1" required> Tôi hiểu: bật công tắc sẽ dừng hẹn bài mới lên Trang và sinh bài mới. Hủy bài và đối soát vẫn chạy.</label>
                 <button class="btn danger" type="submit">Bật công tắc tạm dừng</button></form>`
           : empty}
         ${sys.isAdmin
-          ? html`<form method="post" action="/admin/alert-test" class="actions" style="margin-top:12px">${hidden}<button class="btn" type="submit">Gửi thử cảnh báo</button><span class="small muted">Gửi một tin thử tới các kênh đã cấu hình (Slack, Telegram).</span></form>`
+          ? html`<form method="post" action="/admin/alert-test" class="actions u-mt12">${hidden}<button class="btn" type="submit">Gửi thử cảnh báo</button><span class="small muted">Gửi một tin thử tới các kênh đã cấu hình (Slack, Telegram).</span></form>`
           : empty}
-      </div></div>`
+      </div></details>`
     : empty;
   const total = sum(s.byState);
   const scheduled = sum(s.byState, ['APPROVED', 'SCHEDULED']);
   const published = s.byState['PUBLISHED'] ?? 0;
   const failed = sum(s.byState, ['FAILED_GENERATE', 'FAILED_MEDIA', 'FAILED_PUBLISH']);
+
+  // "Việc cần làm": mỗi dòng là một việc cụ thể kèm đường dẫn, xếp theo mức gấp. Không có việc thì nói rõ.
+  const failedPublish = s.byState['FAILED_PUBLISH'] ?? 0;
+  const todo: { tone: 'bad' | 'warn' | 'info'; text: Safe | string; href: string; cta: string }[] = [];
+  if (sys?.paused) todo.push({ tone: 'bad', text: 'Hệ thống đang tạm dừng: không hẹn bài mới và không sinh bài mới.', href: '#he-thong', cta: 'Xem công tắc' });
+  if (failed) todo.push({ tone: 'bad', text: `${failed} bài bị lỗi, cần xử lý.`, href: failedPublish ? '/queue?state=FAILED_PUBLISH' : '/queue', cta: 'Mở danh sách lỗi' });
+  if (s.pending.overdue) todo.push({ tone: 'warn', text: `${s.pending.overdue} bài chờ duyệt đã quá ${OVERDUE_HOURS} giờ.`, href: '/queue?state=IN_REVIEW', cta: 'Duyệt ngay' });
+  if (s.upcoming[0]) todo.push({ tone: 'info', text: html`Bài kế tiếp lên Trang lúc ${when(s.upcoming[0].scheduled_at, s.upcoming[0].market)}.`, href: `/contents/${s.upcoming[0].id}`, cta: 'Xem bài' });
+  const todoCard = html`<section class="hero" aria-label="Việc cần làm hôm nay">
+    <div>
+      <div class="hero-k">Cần bạn duyệt hôm nay</div>
+      <div class="hero-v">${s.pending.count}<small>bài</small></div>
+      <p class="hero-s">${s.pending.count
+        ? html`Bài lâu nhất đã chờ <b>${span(s.pending.oldestWaitMs)}</b>${s.pending.overdue ? html`, trong đó <b>${s.pending.overdue} bài quá ${OVERDUE_HOURS} giờ</b>` : empty}.`
+        : 'Không có bài nào đang chờ. Bài mới sẽ xuất hiện ở đây khi hệ thống tạo xong.'}</p>
+      <div class="hero-act"><a class="btn primary" href="/queue?state=IN_REVIEW">Mở hàng chờ duyệt</a><a class="btn" href="/create">Tạo bài mới</a></div>
+    </div>
+    <div>
+      ${todo.length
+        ? html`<ul class="todo">${todo.map((t) => html`<li class="todo-${t.tone}"><span>${t.text}</span><a class="btn" href="${t.href}">${t.cta}</a></li>`)}</ul>`
+        : html`<div class="empty">Không có việc nào khác cần xử lý.</div>`}
+    </div>
+  </section>`;
 
   const kpis = html`<div class="kpis">
     ${kpi('Chờ duyệt', 'warn', s.pending.count, 'bài', s.pending.count
@@ -87,9 +112,9 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
           <tr><td>Lượt hiển thị</td><td>${sum30.impressions === null ? 'chưa có' : sum30.impressions}</td></tr>
           <tr><td>Điểm tương tác trung bình</td><td>${Math.round(sum30.avgEngagement ?? 0)}</td></tr>
         </tbody></table>
-        <h2>Bài nổi bật</h2>
+        <h3 class="sub-h">Bài nổi bật</h3>
         <ul class="list">${sum30.top.map((m) => html`<li><div class="what"><a href="/contents/${m.id}">${m.headline}</a><span class="muted small">${marketTag(m.market)} · ${engagement(m)} điểm (${m.reactions} thích, ${m.comments} bình luận, ${m.shares} chia sẻ)</span></div></li>`)}</ul>
-        <h2>Gợi ý giờ đăng</h2>
+        <h3 class="sub-h">Gợi ý giờ đăng</h3>
         <ul>${markets.map((m) => html`<li class="small">${slotText(m)}</li>`)}</ul>
         <p class="hint">Điểm tương tác = thích + 3 × bình luận + 5 × chia sẻ.</p>`
       : html`<div class="empty">Chưa có số liệu. Hệ thống đọc từ Meta mỗi 2 giờ sau khi bài được đăng.</div>`}
@@ -126,16 +151,17 @@ export function dashboardView(ctx: Omit<PageCtx, 'title' | 'nav'>, s: Stats, rec
 
   const activity = html`<div class="panel"><div class="panel-h">Hoạt động gần đây <a class="small" href="/audit">Xem tất cả</a></div><div class="panel-b">
     ${recent.length
-      ? html`<ul class="list">${recent.map((r) => html`<li><div class="when">${when(r.created_at, r.market)}</div><div class="what"><span>${ACTION[r.action] ?? r.action} · <a href="/contents/${r.content_id}">#${r.content_id}</a></span><span class="muted small">${r.actor}</span></div></li>`)}</ul>`
+      ? html`<ul class="list">${recent.map((r) => html`<li><div class="when">${when(r.created_at, r.market)}</div><div class="what"><span>${ACTION[r.action] ?? r.action} · <a href="/contents/${r.content_id}">#${r.content_id}</a></span><span class="muted small">${actorLabel(r.actor)}</span></div></li>`)}</ul>`
       : html`<div class="empty">Chưa có thao tác nào.</div>`}
   </div></div>`;
 
   return page(
     { ...ctx, title: 'Tổng quan', nav: 'dash' },
     html`<div class="page">
-      <div class="page-head"><div><h1>Tổng quan</h1><div class="sub">Tình hình duyệt và đăng bài của ${markets.join(' và ')}</div></div><a class="btn primary" href="/queue?state=IN_REVIEW">Mở hàng chờ duyệt</a></div>
-      ${sysPanel}
+      <div class="page-head"><div><h1>Tổng quan</h1><div class="sub">Tình hình duyệt và đăng bài của ${markets.join(' và ')}</div></div></div>
+      ${todoCard}
       ${kpis}
+      <div id="he-thong">${sysPanel}</div>
       <div class="cols"><div>${stateCard}${chart}${insightCard}${aiCard}</div><div>${upcoming}${marketCard}${activity}</div></div>
     </div>`,
   );

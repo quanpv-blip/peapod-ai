@@ -1,4 +1,4 @@
-import { ACTION, marketTag, pager, when } from '../components.ts';
+import { ACTION, actorLabel, marketTag, pager, when } from '../components.ts';
 import { html } from '../html.ts';
 import { page as layout, type PageCtx } from '../layout.ts';
 import type { Market } from '../../domain/package.ts';
@@ -22,7 +22,7 @@ export function auditView(ctx: Omit<PageCtx, 'title' | 'nav'>, rows: AuditRow[],
         <tbody>${rows.map(
           (r) => html`<tr>
             <td>${when(r.created_at, r.market)}</td>
-            <td>${r.actor}</td>
+            <td>${actorLabel(r.actor)}</td>
             <td>${ACTION[r.action] ?? r.action}</td>
             <td><a href="/contents/${r.content_id}">#${r.content_id}</a> ${marketTag(r.market)}</td>
             <td class="mono">v${r.revision}</td>

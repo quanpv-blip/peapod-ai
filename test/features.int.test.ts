@@ -95,7 +95,7 @@ d('chức năng vận hành (PostgreSQL thật)', () => {
     const gemini = (p: ContentPackage) => ({ generateJson: vi.fn(async () => ({ json: p, usage: { inputTokens: 1, outputTokens: 1, thoughtTokens: 0 } })) }) as unknown as GeminiClient;
 
     it('tạo bài IN_REVIEW từ mục RSS; lần sau không tạo lại cùng nguồn', async () => {
-      const g = gemini(pkg('https://x.test/a'));
+      const g = gemini({ ...pkg('https://x.test/a', 'Doanh nghiệp Nhật tăng đầu tư kho dữ liệu lạnh'), topic_summary: 'Lưu trữ dữ liệu lạnh cho doanh nghiệp' });
       const first = await generateNews({ db, gemini: g, schema, mediaDir: MEDIA, fetchItems: async () => items }, { market: 'VN', limit: 1, model: 'm' });
       expect(first[0]!.outcome).toBe('created');
       const state = (await db.query("SELECT state FROM content_item WHERE id = $1", [first[0]!.id])).rows[0].state;
@@ -103,6 +103,18 @@ d('chức năng vận hành (PostgreSQL thật)', () => {
 
       const second = await generateNews({ db, gemini: g, schema, mediaDir: MEDIA, fetchItems: async () => items }, { market: 'VN', limit: 1, model: 'm' });
       expect(second).toEqual([]);
+    });
+
+    it('bản tin tự động không đăng lại cùng một câu chuyện (nguồn khác, cùng ý) trong 30 ngày', async () => {
+      const head = 'Cảng biển thông minh tăng tốc tự động hóa container';
+      const story = { ...pkg('https://x.test/s1', head), topic_summary: 'Cảng biển thông minh tự động hóa container' };
+      const a = await generateNews({ db, gemini: gemini(story), schema, mediaDir: MEDIA, fetchItems: async () => [{ title: 'S1', url: 'https://x.test/s1', summary: '' }] }, { market: 'VN', limit: 1, model: 'm' });
+      expect(a[0]!.outcome).toBe('created');
+      // Tin khác nguồn nhưng AI viết ra cùng câu chuyện: bị bỏ qua và nói rõ trùng với bài nào.
+      const again = { ...pkg('https://x.test/s2', head), topic_summary: story.topic_summary };
+      const b = await generateNews({ db, gemini: gemini(again), schema, mediaDir: MEDIA, fetchItems: async () => [{ title: 'S2', url: 'https://x.test/s2', summary: '' }] }, { market: 'VN', limit: 1, model: 'm' });
+      expect(b[0]!.outcome).toBe('skipped');
+      expect(b[0]!.detail).toContain(`trùng ý với bài #${a[0]!.id}`);
     });
 
     it('nguồn ngoài RSS bị bỏ qua', async () => {

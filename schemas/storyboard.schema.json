@@ -1,0 +1,163 @@
+{
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "approx": {
+            "type": "boolean"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "value",
+          "raw",
+          "quote"
+        ]
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "hook",
+              "stat",
+              "cards",
+              "compare",
+              "bullets",
+              "checklist",
+              "timeline",
+              "process",
+              "alert",
+              "recap",
+              "cta"
+            ]
+          },
+          "chapter": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "accent": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string",
+                "enum": [
+                  "shield",
+                  "alert",
+                  "chip",
+                  "cloud",
+                  "server",
+                  "money",
+                  "people",
+                  "globe",
+                  "lock",
+                  "bolt",
+                  "chart",
+                  "clock",
+                  "check",
+                  "mail",
+                  "building",
+                  "factory",
+                  "robot",
+                  "thermometer",
+                  "link",
+                  "document"
+                ]
+              }
+            },
+            "required": [
+              "title"
+            ]
+          },
+          "headline": {
+            "type": "string"
+          },
+          "sub": {
+            "type": "string"
+          },
+          "factId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "factId": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "when": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "question": {
+            "type": "string"
+          },
+          "say": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "say",
+          "items"
+        ]
+      }
+    }
+  },
+  "required": [
+    "scenes",
+    "facts"
+  ]
+}

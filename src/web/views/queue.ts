@@ -1,6 +1,7 @@
 import type { ContentRow } from '../../services/contents.ts';
 import type { Page } from '../../domain/paging.ts';
 import { GRADE_TEXT, type Quality } from '../../domain/quality.ts';
+import { PILLAR_LABEL, type Pillar, type RiskFlag } from '../../domain/strategy.ts';
 import type { GenJobView } from '../../services/genJobs.ts';
 import { OVERDUE_HOURS } from '../../services/stats.ts';
 import { FORMAT, marketTag, pager, span, status, when } from '../components.ts';
@@ -15,6 +16,11 @@ export interface RowInfo {
   quality: Quality;
   /** Đủ điều kiện duyệt hàng loạt (điểm tốt, không khẳng định cần kiểm, không lỗi nặng). */
   bulkOk: boolean;
+  pillar: Pillar;
+  /** Dấu hiệu rủi ro nội dung (tin sự cố, số liệu, pháp lý...). */
+  flags: RiskFlag[];
+  /** Mức cần chú ý (cao hơn = đọc trước). */
+  attention: number;
 }
 
 export interface QueueView {
@@ -61,7 +67,20 @@ function link(state: string, market: string, q = '', page = 1): string {
   return s ? `/queue?${s}` : '/queue';
 }
 
-const qChip = (q: Quality): Safe => html`<span class="qchip q-${q.grade}" title="${q.issues.length ? q.issues.map((i) => i.text).join(' · ') : 'Không phát hiện vấn đề'}">${q.score} · ${GRADE_TEXT[q.grade]}</span>`;
+// Vòng điểm: phần tô tỷ lệ với điểm, màu theo mức; di chuột để xem các vấn đề. Lớp ring-N gán độ đầy mà không cần style nội tuyến.
+const qChip = (q: Quality): Safe => html`<span class="row-gap"><span class="ring q-${q.grade} ring-${Math.max(0, Math.min(100, Math.round(q.score)))}" title="${q.issues.length ? q.issues.map((i) => i.text).join(' · ') : 'Không phát hiện vấn đề'}"><b>${q.score}</b></span><span class="small muted">${GRADE_TEXT[q.grade]}</span></span>`;
+
+/** Trụ cột và cờ rủi ro dưới tiêu đề: giúp người duyệt biết bài nào cần đọc kỹ ngay từ danh sách. */
+function tags(i: RowInfo): Safe {
+  return html`<div class="tags"><span class="tag">${PILLAR_LABEL[i.pillar]}</span>${i.flags.map((f) => html`<span class="tag risk-${f.level}" title="${f.text}">${f.level === 'high' ? '⚠ ' : ''}${FLAG_SHORT[f.code]}</span>`)}</div>`;
+}
+const FLAG_SHORT: Record<RiskFlag['code'], string> = {
+  incident: 'Tin sự cố',
+  named_company: 'Nêu tên tổ chức',
+  unverified: 'Cần đối chiếu',
+  figures: 'Có số liệu',
+  legal: 'Pháp lý',
+};
 
 function genPanel(jobs: GenJobView[]): Safe {
   if (jobs.length === 0) return empty;
@@ -76,7 +95,8 @@ function genPanel(jobs: GenJobView[]): Safe {
 
 export function queueView(v: QueueView): string {
   const total = Object.values(v.counts).reduce((a, b) => a + b, 0);
-  const tabs = STATE_FILTERS.map(([k, label]) => html`<a href="${link(k, v.filter.market, v.filter.q)}" class="${v.filter.state === k ? 'on' : ''}">${label} <span class="n">${k ? (v.counts[k] ?? 0) : total}</span></a>`);
+  // Tab trạng thái đang bằng 0 chỉ gây nhiễu: ẩn, trừ "Tất cả", "Chờ duyệt" và tab đang chọn.
+  const tabs = STATE_FILTERS.filter(([k]) => k === '' || k === 'IN_REVIEW' || v.filter.state === k || (v.counts[k] ?? 0) > 0).map(([k, label]) => html`<a href="${link(k, v.filter.market, v.filter.q)}" class="${v.filter.state === k ? 'on' : ''}">${label} <span class="n">${k ? (v.counts[k] ?? 0) : total}</span></a>`);
   const marketOpts: [string, string][] = [['', 'Cả hai'], ...v.markets.map((m): [string, string] => [m, m])];
   const markets = v.markets.length > 1 ? html`<div class="seg">${marketOpts.map(([k, label]) => html`<a href="${link(v.filter.state, k, v.filter.q)}" class="${v.filter.market === k ? 'on' : ''}">${label}</a>`)}</div>` : empty;
   const hidden = html`<input type="hidden" name="_csrf" value="${v.ctx.csrf}">`;
@@ -107,31 +127,32 @@ export function queueView(v: QueueView): string {
 
   const selectable = (r: ContentRow) => v.canBulk && r.state === 'IN_REVIEW';
   const anySelectable = v.rows.some(selectable);
+  // Trong trang hiện tại, bài chờ duyệt cần chú ý nhiều nhất (tin sự cố, nhiều khẳng định, điểm thấp) đứng trước.
+  const ordered = [...v.rows].sort((a, b) => Number(b.state === 'IN_REVIEW') - Number(a.state === 'IN_REVIEW') || (v.info.get(String(b.id))?.attention ?? 0) - (v.info.get(String(a.id))?.attention ?? 0));
   const body: Safe = v.rows.length
     ? html`<div class="table-wrap"><table>
-        <thead><tr>${anySelectable ? html`<th class="chk"><input type="checkbox" data-bulk-all aria-label="Chọn tất cả bài chờ duyệt"></th>` : empty}<th>Mã</th><th>Nội dung</th><th>Thị trường</th><th>Định dạng</th><th>Trạng thái</th><th>Chất lượng</th><th>Đang chờ</th><th>Cần kiểm</th><th>Giờ đăng</th><th>Bản</th></tr></thead>
-        <tbody>${v.rows.map((r) => {
+        <thead><tr>${anySelectable ? html`<th class="chk"><input type="checkbox" data-bulk-all aria-label="Chọn tất cả bài chờ duyệt"></th>` : empty}<th class="col-title">Nội dung</th><th>Trạng thái</th><th>Chất lượng</th><th>Đang chờ</th><th>Giờ đăng</th></tr></thead>
+        <tbody>${ordered.map((r) => {
           const i = v.info.get(String(r.id));
-          return html`<tr>
+          // Vạch màu bên trái dòng theo mức rủi ro: đỏ = cần đọc từng câu, hổ phách = cần đối chiếu.
+          const risk = i?.flags.some((f) => f.level === 'high') ? 'r-high' : i?.flags.length ? 'r-med' : '';
+          return html`<tr class="${risk}">
             ${anySelectable ? html`<td class="chk">${selectable(r) ? html`<input type="checkbox" name="ids" value="${r.id}" data-ok="${i?.bulkOk ? '1' : '0'}" aria-label="Chọn bài #${r.id}">` : empty}</td>` : empty}
-            <td class="mono muted">#${r.id}</td>
-            <td class="title"><a href="/contents/${r.id}">${i?.headline ?? '(không có tiêu đề)'}</a>${i?.editedBy ? html`<div class="small muted">Sửa bởi ${i.editedBy}</div>` : empty}</td>
-            <td>${marketTag(r.market)}</td>
-            <td>${FORMAT[r.format] ?? r.format}</td>
+            <td class="title"><a href="/contents/${r.id}">${i?.headline ?? '(không có tiêu đề)'}</a>
+              <div class="row-meta">${marketTag(r.market)}<span class="mono muted">#${r.id}</span><span class="muted">${FORMAT[r.format] ?? r.format}</span><span class="mono muted">v${r.current_revision}</span>${i?.editedBy ? html`<span class="muted">sửa bởi ${i.editedBy}</span>` : empty}</div>
+              ${i ? tags(i) : empty}</td>
             <td>${status(r.state)}</td>
             <td>${i ? qChip(i.quality) : html`<span class="muted">-</span>`}</td>
             <td>${waitCell(r)}</td>
-            <td>${i && i.claims ? html`<span class="warn-t">${i.claims} mục</span>` : html`<span class="muted">-</span>`}</td>
             <td>${when(r.scheduled_at, r.market)}</td>
-            <td class="mono muted">v${r.current_revision}</td>
           </tr>`;
         })}</tbody></table></div>
         ${anySelectable ? html`<div class="bulk-bar"><span class="small" data-bulk-count>Chưa chọn bài nào</span>
           <button class="btn" type="button" data-bulk-pick-ok>Chọn bài đạt chất lượng</button>
           <button class="btn primary" type="submit" name="bulk" value="approve" data-bulk-act disabled>Duyệt và hẹn giờ</button>
           <input type="text" name="note" placeholder="Lý do (bắt buộc khi từ chối)" aria-label="Lý do từ chối" maxlength="300">
-          <button class="btn danger" type="submit" name="bulk" value="reject" data-bulk-act disabled>Từ chối</button>
-          <span class="small muted">Duyệt hàng loạt chỉ nhận bài điểm từ 85, không có khẳng định cần kiểm; giờ đăng chia mỗi bài một ngày làm việc.</span></div>` : empty}`
+          <button class="btn danger" type="submit" name="bulk" value="reject" data-bulk-act disabled>Từ chối</button></div>` : empty}
+        ${anySelectable ? html`<p class="hint">Duyệt hàng loạt chỉ nhận bài điểm từ 85, không có khẳng định cần kiểm và không có cờ rủi ro cao. Giờ đăng chia mỗi bài một ngày làm việc.</p>` : empty}`
     : html`<div class="table-wrap"><div class="empty">Không có bài nào khớp bộ lọc.</div></div>`;
 
   return page(

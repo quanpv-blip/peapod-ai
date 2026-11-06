@@ -166,3 +166,27 @@ Hashtag: ${post.hashtags.join(' ')}
 NGUỒN:
 ${sources.map((x, i) => `${i + 1}. ${x.title}\n   URL: ${x.url}`).join('\n')}`;
 }
+
+/** Độ dài của góp ý do người duyệt gõ. */
+export const FEEDBACK_MIN = 5;
+export const FEEDBACK_MAX = 500;
+
+/**
+ * Sửa theo góp ý tự do của người duyệt (thay vì chỉ chọn một trong bốn hướng cố định).
+ * Góp ý là chỉ dẫn biên tập; bài gốc vẫn là dữ liệu. Không cho thêm dữ kiện mới, kể cả khi góp ý yêu cầu.
+ */
+export function rewriteFeedbackPrompt(market: Market, feedback: string, post: { headline: string; body: string; call_to_action: string; hashtags: string[] }, sources: { title: string; url: string }[]): string {
+  return `Thị trường: ${market}. Người duyệt yêu cầu sửa bài theo góp ý sau (chỉ sửa đúng điều được nêu, giữ nguyên phần còn lại):
+GÓP Ý: ${feedback.replace(/\s+/g, ' ').trim()}
+Đặt media.engine = "NONE". Giữ nguyên "sources" như dưới đây, claims_to_verify để mảng rỗng. Nếu góp ý yêu cầu thêm số liệu hoặc tên không có trong bài gốc thì KHÔNG thêm; giữ nguyên bài ở phần đó.
+
+BÀI GỐC:
+Tiêu đề: ${post.headline}
+Thân bài:
+${post.body}
+Lời kêu gọi: ${post.call_to_action}
+Hashtag: ${post.hashtags.join(' ')}
+
+NGUỒN:
+${sources.map((x, i) => `${i + 1}. ${x.title}\n   URL: ${x.url}`).join('\n')}`;
+}

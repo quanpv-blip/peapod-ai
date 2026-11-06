@@ -41,6 +41,8 @@ const PATH: Record<string, string> = {
   account: '<circle cx="12" cy="8" r="4"/><path d="M4 21c.7-4 4-6 8-6s7.3 2 8 6"/>',
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.4.9 2.2 2.6 2.5 5.2"/>',
   quota: '<path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/><path d="M19 3v4h-4"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h10"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.8-3.8"/>',
   bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   logout: '<path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -50,7 +52,7 @@ const PATH: Record<string, string> = {
 const svg = (name: string, cls = 'ico') =>
   raw(`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATH[name] ?? ''}</svg>`);
 
-export const flashBox = (f?: Flash): Safe => (f ? html`<div class="notice ${f.kind}" role="${f.kind === 'err' ? 'alert' : 'status'}">${f.text}</div>` : empty);
+export const flashBox = (f?: Flash): Safe => (f ? html`<div class="notice ${f.kind}"${f.kind === 'err' ? '' : ' data-flash'} role="${f.kind === 'err' ? 'alert' : 'status'}">${f.text}</div>` : empty);
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(-2).map((w) => w[0]!.toUpperCase()).join('') || '?';
 
@@ -71,12 +73,12 @@ const footer = html`<footer class="footer">
 export function page(ctx: PageCtx, body: Safe): string {
   const admin = !!ctx.user && ctx.user.roles.includes('admin');
   const item = (k: NavKey, href: string, label: string, badge?: number) =>
-    html`<a href="${href}" class="nav-i ${ctx.nav === k ? 'on' : ''}"${ctx.nav === k ? ' aria-current="page"' : ''}>${svg(k)}<span>${label}</span>${badge ? html`<span class="badge" aria-label="${badge} bài chờ duyệt">${badge}</span>` : empty}</a>`;
+    html`<a href="${href}" class="nav-i ${ctx.nav === k ? 'on' : ''}"${ctx.nav === k ? ' aria-current="page"' : ''}>${ctx.nav === k ? html`<i class="nav-ind"></i>` : empty}${svg(k)}<span>${label}</span>${badge ? html`<span class="badge" aria-label="${badge} bài chờ duyệt">${badge}</span>` : empty}</a>`;
 
   const shell = ctx.user
     ? html`<div class="shell">
-        <aside class="side" aria-label="Điều hướng chính">
-          <a class="brand" href="/"><img class="logo" src="/assets/logo.svg" alt="" width="36" height="36"><span class="brand-t">PeaPod<b> AI</b></span></a>
+        <aside class="side" id="rail" aria-label="Điều hướng chính">
+          <a class="brand" href="/"><img class="logo" src="/assets/logo.svg" alt="" width="34" height="34"><span class="brand-t">PeaPod<b> AI</b></span></a>
           <nav class="nav">
             <div class="nav-g">Công việc</div>
             ${item('dash', '/', 'Tổng quan')}
@@ -93,9 +95,12 @@ export function page(ctx: PageCtx, body: Safe): string {
             <a class="who" href="/account" title="Tài khoản của tôi"><div class="who-n">${ctx.user.name}</div><div class="who-r">${ctx.user.roles.map((r) => ROLE_LABEL[r] ?? r).join(' · ')}</div></a>
           </div>
         </aside>
+        <div class="scrim" data-nav-close></div>
         <div class="content">
           <header class="topbar">
-            <div class="topbar-title small muted" aria-hidden="true">${ctx.title}</div>
+            <button class="rail-toggle" type="button" data-rail-toggle aria-label="Thu gọn hoặc mở thanh bên" aria-controls="rail">${svg('menu')}</button>
+            <div class="topbar-title">${ctx.title}</div>
+            <button class="cmdk-trigger" type="button" data-cmdk-open aria-label="Tìm nhanh hoặc đi tới trang">${svg('search')}<span>Tìm nhanh hoặc đi tới…</span><kbd class="kbd">Ctrl K</kbd></button>
             <div class="grow"></div>
             ${themeSwitch}
             <a class="iconbtn" href="/queue" title="Hàng chờ duyệt" aria-label="Hàng chờ duyệt${ctx.pending ? `, ${ctx.pending} bài` : ''}">${svg('bell')}${ctx.pending ? html`<span class="dot"></span>` : empty}</a>
@@ -105,7 +110,7 @@ export function page(ctx: PageCtx, body: Safe): string {
                 <a href="/account" role="menuitem">${svg('account')}Tài khoản của tôi</a>
                 <a href="/audit" role="menuitem">${svg('audit')}Nhật ký kiểm toán</a>
                 <hr>
-                <form method="post" action="/logout" style="margin:0">
+                <form class="u-m0" method="post" action="/logout">
                   <input type="hidden" name="_csrf" value="${ctx.csrf}">
                   <button type="submit" role="menuitem">${svg('logout')}Đăng xuất</button>
                 </form>
@@ -113,9 +118,10 @@ export function page(ctx: PageCtx, body: Safe): string {
             </details>
           </header>
           ${ctx.paused ? html`<div class="banner" role="alert"><b>Công tắc tạm dừng đang BẬT.</b> Không hẹn bài mới lên Trang và không sinh bài mới. Hủy bài và đối soát vẫn chạy.</div>` : empty}
-          <main class="page">${body}</main>
+          <main class="main">${body}</main>
           ${footer}
         </div>
+        <div class="toasts" id="toasts" aria-live="polite"></div>
       </div>`
     : body;
 

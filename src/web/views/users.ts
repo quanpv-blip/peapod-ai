@@ -40,7 +40,7 @@ export function usersView(ctx: Omit<PageCtx, 'title' | 'nav'>, users: UserRow[],
       </div></td>
     </tr>`)}</tbody></table></div>`;
 
-  const create = html`<section class="panel"><div class="panel-h"><div>Thêm người dùng<div class="small muted" style="font-weight:400">Mật khẩu được tạo tự động và chỉ hiện một lần.</div></div></div>
+  const create = html`<section class="panel"><div class="panel-h"><div>Thêm người dùng<div class="small muted u-fw4">Mật khẩu được tạo tự động và chỉ hiện một lần.</div></div></div>
     <div class="panel-b">
       <form method="post" action="/users" class="form-grid">${hidden}
         <div class="field"><label for="u-name">Tên hiển thị</label><input id="u-name" name="name" type="text" required maxlength="80"></div>
@@ -60,7 +60,7 @@ export function usersView(ctx: Omit<PageCtx, 'title' | 'nav'>, users: UserRow[],
       ${flashBox(o.flash)}
       ${secret}
       ${rows}
-      <div style="height:22px"></div>
+      <div class="u-h22"></div>
       ${create}
     </div>`,
   );

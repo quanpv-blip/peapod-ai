@@ -27,7 +27,7 @@ export function costsPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: { sum: CostSum
           ${settings.monthlyCapUsd > 0 ? html`<div class="hbar"><span class="w${monthPct}"></span></div>` : empty}</div>
         <div class="kpi"><div class="kpi-l"><i class="c-mute"></i>Lượt gọi tháng này</div><div class="kpi-v">${sum.byModel.reduce((a, m) => a + m.calls, 0)}</div>
           <div class="kpi-s">${sum.byModel.length} mô hình đã dùng</div></div>
-        <div class="kpi"><div class="kpi-l"><i class="c-ok"></i>Đơn giá đang dùng</div><div class="kpi-v" style="font-size:20px">${settings.priceInPerM} / ${settings.priceOutPerM}</div>
+        <div class="kpi"><div class="kpi-l"><i class="c-ok"></i>Đơn giá đang dùng</div><div class="kpi-v u-fs20">${settings.priceInPerM} / ${settings.priceOutPerM}</div>
           <div class="kpi-s">USD mỗi triệu token (vào / ra)</div></div>
       </div>
 

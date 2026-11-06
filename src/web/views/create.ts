@@ -27,7 +27,7 @@ export function createPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: CreateOpts): 
   const blocked = !o.aiOn || o.markets.length === 0;
 
   const suggestions: Safe = o.suggest
-    ? html`<section class="panel"><div class="panel-h"><div>Chủ đề đề xuất <span class="small muted" style="font-weight:400">· ${SOURCE_LABEL[o.suggest.source]}</span></div></div>
+    ? html`<section class="panel"><div class="panel-h"><div>Chủ đề đề xuất <span class="small muted u-fw4">· ${SOURCE_LABEL[o.suggest.source]}</span></div></div>
         <div class="panel-b">
           ${o.suggest.topics.length
             ? html`<div class="topics">${o.suggest.topics.map((t) => html`<article class="topic">
@@ -43,7 +43,7 @@ export function createPage(ctx: Omit<PageCtx, 'title' | 'nav'>, o: CreateOpts): 
         </div></section>`
     : empty;
 
-  const recent: Safe = html`<section class="panel"><div class="panel-h"><div>Tin trong kho <span class="small muted" style="font-weight:400">· ${o.market}, 3 ngày gần đây</span></div></div>
+  const recent: Safe = html`<section class="panel"><div class="panel-h"><div>Tin trong kho <span class="small muted u-fw4">· ${o.market}, 3 ngày gần đây</span></div></div>
     <div class="panel-b">
       ${o.recent.length
         ? html`<ul class="list">${o.recent.slice(0, 15).map((i) => html`<li><div class="when">${i.published_at ? when(i.published_at, o.market) : '-'}</div>

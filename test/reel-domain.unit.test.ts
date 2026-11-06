@@ -47,3 +47,11 @@ describe('gián đoạn và dữ liệu cho giao diện', () => {
     expect(reelView({ state: 'ready', at: now.toISOString(), progress: 1 }, true)).toMatchObject({ state: 'ready', pct: 100 });
   });
 });
+
+describe('chờ khi AI quá tải', () => {
+  it('thanh tiến độ hiện lý do chờ thay cho tên bước', () => {
+    expect(reelStageText({ state: 'pending', at: 'x', stage: 'directing', waiting: 'Gemini đang quá tải, tự thử lại sau 20 giây (lần 1/3)' })).toMatch(/quá tải/);
+    expect(reelStageText({ state: 'pending', at: 'x', stage: 'directing' })).toBe('AI đang viết kịch bản phân cảnh');
+    expect(reelStageText({ state: 'pending', at: 'x', stage: 'voicing' })).toBe('Đang tạo giọng đọc');
+  });
+});

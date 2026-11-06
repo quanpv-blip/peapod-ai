@@ -4,10 +4,11 @@ import { canCancel, canReview, checkCsrf, csrfToken, verifyPassword, signSession
 import { fromLocalInput, nextBusinessSlot, DEFAULT_LOCAL_TIME, toLocalInput } from '../domain/schedule.ts';
 import type { ContentPackage, Market } from '../domain/package.ts';
 import { bulkApprovable, scoreQuality } from '../domain/quality.ts';
+import { attentionScore, classifyPillar, riskFlags } from '../domain/strategy.ts';
 import { planSlots } from '../domain/bulk.ts';
 import { listMetrics, metricOf } from '../services/metrics.ts';
 import { rewritePost } from '../services/rewrite.ts';
-import { isRewriteStyle } from '../domain/editorial.ts';
+import { isRewriteStyle, type RewriteStyle } from '../domain/editorial.ts';
 import { GenJobs } from '../services/genJobs.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import * as svc from '../services/contents.ts';
@@ -23,12 +24,15 @@ import { changeOwnPassword } from '../services/account.ts';
 import { diffPackages } from '../domain/diff.ts';
 import { pageInfo, PAGE_SIZE } from '../domain/paging.ts';
 import { notifyAll } from '../services/alerts.ts';
-import { makeReelRemote, remoteCardConfigFromEnv } from '../media/remote-card.ts';
-import { cancelReel, latestReelPath, reelStatus, startReelJob } from '../services/reels.ts';
+import { makeReelRemote, makeSpecRemote, remoteCardConfigFromEnv } from '../media/remote-card.ts';
+import { cancelReel, latestReelPath, reelStatus, startReelJob, startStoryReel } from '../services/reels.ts';
+import { makeDirector, storySource } from '../services/storyReel.ts';
 import { reelView } from '../domain/reel.ts';
 import { REEL_JS } from './reel-js.ts';
 import { UI_JS } from './ui-js.ts';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { settingsPage } from './views/settings.ts';
 import { costsPage } from './views/costs.ts';
 import { campaignPage } from './views/campaign.ts';
@@ -134,7 +138,7 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
 
   // Trang Biên tập video nhúng Remotion Studio: chỉ cho khung nhúng đúng một nguồn đã cấu hình.
   const studioUrl = studioEmbedUrl(process.env.REMOTION_STUDIO_URL);
-  const csp = `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; ${studioUrl ? `frame-src ${new URL(studioUrl).origin}; ` : ''}frame-ancestors 'none'`;
+  const csp = `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: https:; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; ${studioUrl ? `frame-src ${new URL(studioUrl).origin}; ` : ''}frame-ancestors 'none'`;
   app.addHook('onSend', async (_req, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
@@ -150,6 +154,27 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   app.get('/assets/side-bg.svg', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=86400').type('image/svg+xml; charset=utf-8').send(SIDE_BG_SVG));
   app.get('/assets/theme.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(THEME_JS));
   app.get('/assets/reel.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(REEL_JS));
+
+  // Font Noto Sans tự lưu trữ (từ gói @fontsource đã cài cho thẻ ảnh): chỉ phục vụ đúng các tệp trong danh sách.
+  const FONT_FILES: Record<string, [string, string]> = {};
+  for (const w of [400, 500, 600, 700]) {
+    FONT_FILES[`latin-${w}.woff`] = ['@fontsource/noto-sans', `noto-sans-latin-${w}-normal.woff`];
+    FONT_FILES[`vietnamese-${w}.woff`] = ['@fontsource/noto-sans', `noto-sans-vietnamese-${w}-normal.woff`];
+  }
+  for (const w of [400, 700]) FONT_FILES[`jp-${w}.woff`] = ['@fontsource/noto-sans-jp', `noto-sans-jp-japanese-${w}-normal.woff`];
+  const fontCache = new Map<string, Buffer>();
+  const fontRequire = createRequire(import.meta.url);
+  app.get('/assets/fonts/:file', async (req, reply) => {
+    const name = (req.params as { file?: string }).file ?? '';
+    const spec = Object.hasOwn(FONT_FILES, name) ? FONT_FILES[name] : undefined;
+    if (!spec) return reply.code(404).send('Not found');
+    let buf = fontCache.get(name);
+    if (!buf) {
+      buf = await readFile(path.join(path.dirname(fontRequire.resolve(`${spec[0]}/package.json`)), 'files', spec[1]));
+      fontCache.set(name, buf);
+    }
+    return reply.header('Cache-Control', 'public, max-age=31536000, immutable').type('font/woff').send(buf);
+  });
 
   app.get('/assets/ui.js', async (_req, reply) => reply.header('Cache-Control', 'public, max-age=300').type('application/javascript; charset=utf-8').send(UI_JS));
 
@@ -250,7 +275,8 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
       for (const x of t.rows) {
         const q = scoreQuality(x.package, x.market);
         const claims = x.package.claims_to_verify.length;
-        info.set(String(x.content_id), { headline: x.package.post.headline, claims, sources: x.package.sources.length, editedBy: x.edited_by, quality: q, bulkOk: bulkApprovable(q, claims) });
+        const flags = riskFlags(x.package);
+        info.set(String(x.content_id), { headline: x.package.post.headline, claims, sources: x.package.sources.length, editedBy: x.edited_by, quality: q, bulkOk: bulkApprovable(q, claims) && !flags.some((f) => f.level === 'high'), pillar: classifyPillar(x.package), flags, attention: attentionScore(flags, q.score) });
       }
     }
     const counts = (await getStats(o.db, s.actor)).byState;
@@ -432,11 +458,14 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   // Viết lại bằng AI: tạo revision mới (cần quyền sửa), ở lại trang bài để so sánh ngay.
   app.post('/contents/:id/rewrite', guarded(async (s, req, reply) => {
     const id = idOf(req);
-    const style = str((req.body as Record<string, unknown> | undefined)?.style);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const style = str(body.style);
+    const feedback = str(body.feedback).trim();
     try {
       if (!o.generator) throw new AppError('INVALID', 'Chưa cấu hình khóa Gemini (GEMINI_API_KEY).');
-      if (!isRewriteStyle(style)) throw new AppError('INVALID', 'Hướng chỉnh không hợp lệ.');
-      await rewritePost({ db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, model: o.generator.model }, s.actor, id, style);
+      // Có góp ý tự do thì dùng góp ý; không thì dùng hướng chỉnh đã chọn.
+      if (!feedback && !isRewriteStyle(style)) throw new AppError('INVALID', 'Hướng chỉnh không hợp lệ.');
+      await rewritePost({ db: o.db, gemini: o.generator.gemini, schema: o.generator.schema, model: o.generator.model }, s.actor, id, feedback ? { feedback } : (style as RewriteStyle));
       return reply.redirect(`/contents/${id}?ok=rewritten`);
     } catch (e) {
       if (!(e instanceof AppError)) throw e;
@@ -559,7 +588,14 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
   }));
 
   // --- video Reels 9:16 của bài (dựng qua dịch vụ Remotion, chạy nền) ---
-  const reelDeps = () => ({ db: o.db, mediaDir: process.env.MEDIA_DIR ?? './media', remote: makeReelRemote(remoteCardConfigFromEnv()!) });
+  const ttsModel = process.env.GEMINI_TTS_MODEL ?? 'gemini-3.8-flash-lite-tts';
+  const reelDeps = () => ({
+    db: o.db,
+    mediaDir: process.env.MEDIA_DIR ?? './media',
+    remote: makeReelRemote(remoteCardConfigFromEnv()!),
+    // Lời đọc chỉ khi có khóa Gemini và không đặt REEL_VOICE=off.
+    tts: o.generator && process.env.REEL_VOICE !== 'off' ? async (text: string) => (await o.generator!.gemini.tts({ model: ttsModel, text })).wav : undefined,
+  });
   // Quay về trang Video (nếu thao tác từ đó) hoặc trang bài. Chỉ hai đích cố định, không nhận URL từ người dùng.
   const reelBack = (b: Record<string, unknown>, id: number) => (q: string) => (str(b.back) === 'video' ? `/video?ok=${q}` : `/contents/${id}?ok=${q}`);
 
@@ -571,7 +607,21 @@ export async function registerWeb(app: FastifyInstance, o: WebOptions): Promise<
     if (!remoteCardConfigFromEnv()) return reply.redirect(back('reel-off'));
     // Chặn dựng chồng: chỉ cho dựng khi không có việc nào đang chạy (việc treo quá lâu đã được báo gián đoạn).
     if ((await reelStatus(o.db, id))?.state === 'pending') return reply.redirect(back('reel-busy'));
-    const st = await startReelJob(reelDeps(), id, d.item.current_revision, d.package);
+    const tpl = str((req.body as Record<string, unknown> | undefined)?.template);
+    const isTpl = tpl === 'list' || tpl === 'focus' || tpl === 'alert';
+    // Video v3 (AI viết kịch bản phân cảnh, engine VideoSpec) là mặc định khi có Gemini. Chọn mẫu cũ, hoặc REEL_ENGINE=v2, thì dựng v2.
+    if (!isTpl && o.generator && process.env.REEL_ENGINE !== 'v2') {
+      const g = o.generator;
+      const st = await startStoryReel(
+        { ...reelDeps(), spec: makeSpecRemote(remoteCardConfigFromEnv()!), direct: makeDirector(o.db, g.gemini, g.model, d.package.market) },
+        id,
+        d.item.current_revision,
+        d.package,
+        await storySource(o.db, d.package),
+      );
+      return reply.redirect(back(st.state === 'error' ? 'reel-failed' : 'reel-started'));
+    }
+    const st = await startReelJob(reelDeps(), id, d.item.current_revision, d.package, isTpl ? tpl : undefined);
     return reply.redirect(back(st.state === 'error' ? 'reel-failed' : 'reel-started'));
   }));
 

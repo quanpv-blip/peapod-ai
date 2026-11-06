@@ -16,6 +16,8 @@ export function classifyAiError(e: unknown): string {
   if (err?.status === 429 || /HTTP 429|Rate limit|quota|RESOURCE_EXHAUSTED/i.test(msg)) return 'hết hạn mức trong ngày';
   if (err?.status === 503 || /HTTP 503|high demand|quá tải|UNAVAILABLE/i.test(msg)) return 'đang quá tải';
   if (err?.name === 'TimeoutError' || err?.name === 'AbortError' || /aborted|timed? ?out/i.test(msg)) return 'phản hồi quá chậm';
+  if (err?.status === 400 || /HTTP 400|invalid_request|INVALID_ARGUMENT/i.test(msg)) return 'từ chối yêu cầu (lược đồ hoặc nội dung không hợp lệ)';
+  if (err?.status === 401 || err?.status === 403 || /HTTP 40[13]|PERMISSION_DENIED|API key/i.test(msg)) return 'khóa API không hợp lệ hoặc không có quyền';
   return 'lỗi';
 }
 

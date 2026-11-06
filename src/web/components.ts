@@ -24,7 +24,17 @@ export const ACTION: Record<string, string> = {
   REQUEST_CHANGES: 'Yêu cầu chỉnh sửa',
   EDIT: 'Chỉnh sửa nội dung',
   CANCEL: 'Hủy',
+  PUBLISH: 'Hẹn giờ lên Trang',
+  PUBLISHED: 'Đã đăng lên Trang',
+  PUBLISH_FAILED: 'Đăng lỗi',
 };
+
+/** Tên hiển thị của người thực hiện: tiến trình hệ thống (system:publisher...) hiện bằng tiếng Việt thay vì mã. */
+export function actorLabel(actor: string): string {
+  if (!actor.startsWith('system:')) return actor;
+  const map: Record<string, string> = { publisher: 'Hệ thống (đăng bài)', cycle: 'Hệ thống (chu kỳ nền)', reel: 'Hệ thống (video)', zalo: 'Hệ thống (cảnh báo)', telegram: 'Hệ thống (Telegram)' };
+  return map[actor.slice('system:'.length)] ?? 'Hệ thống';
+}
 
 export const FORMAT: Record<string, string> = { TEXT: 'Chỉ văn bản', IMAGE: 'Ảnh thẻ', REEL: 'Video ngắn (Reel)' };
 

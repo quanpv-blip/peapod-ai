@@ -150,8 +150,8 @@ describe('hàng chờ: duyệt hàng loạt và chất lượng', () => {
   const row = (id: number, state = 'IN_REVIEW'): ContentRow => ({ id, market: 'VN', format: 'TEXT', media_engine: 'NONE', state, current_revision: 1, scheduled_at: null, updated_at: new Date().toISOString() }) as unknown as ContentRow;
   const q = scoreQuality(pkg(), 'VN');
   const info = new Map<string, RowInfo>([
-    ['1', { headline: 'A', claims: 0, sources: 1, editedBy: null, quality: q, bulkOk: true }],
-    ['2', { headline: 'B', claims: 2, sources: 1, editedBy: null, quality: scoreQuality(pkg({ body: 'x' }), 'VN'), bulkOk: false }],
+    ['1', { headline: 'A', claims: 0, sources: 1, editedBy: null, quality: q, bulkOk: true, pillar: 'other', flags: [], attention: 0 }],
+    ['2', { headline: 'B', claims: 2, sources: 1, editedBy: null, quality: scoreQuality(pkg({ body: 'x' }), 'VN'), bulkOk: false, pillar: 'security', flags: [{ code: 'incident', level: 'high', text: 'Tin sự cố' }], attention: 80 }],
   ]);
   const base = { ctx: { user: { name: 'Q', email: 'a@x', roles: ['approver_vn'] }, csrf: 'tok' }, rows: [row(1), row(2), row(3, 'APPROVED')], info, counts: { IN_REVIEW: 2 }, filter: { state: '', market: '', q: '' }, page: pageInfo(1, 3), markets: ['VN'], now: new Date(), canGenerate: true, canPublish: false, genJobs: [] };
 

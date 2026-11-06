@@ -50,10 +50,9 @@ export function videoView(v: VideoView): string {
   const tabs = STATE_FILTERS.map(([k, label]) => html`<a href="${link(k, v.filter.market)}" class="${v.filter.state === k ? 'on' : ''}">${label}</a>`);
   const marketOpts: [string, string][] = [['', 'Cả hai'], ...v.markets.map((m): [string, string] => [m, m])];
   const markets = v.markets.length > 1 ? html`<div class="seg">${marketOpts.map(([k, label]) => html`<a href="${link(v.filter.state, k)}" class="${v.filter.market === k ? 'on' : ''}">${label}</a>`)}</div>` : empty;
-  const anyPending = [...v.info.values()].some((i) => i.reel?.state === 'pending');
 
   const videoCell = (r: ContentRow, i: VideoRowInfo | undefined): Safe => {
-    if (i?.reel?.state === 'pending') return reelProgress(r.id, i.reel, v.ctx.csrf ?? '', { compact: true });
+    if (i?.reel?.state === 'pending') return reelProgress(r.id, i.reel, v.ctx.csrf ?? '', { compact: true, poll: true });
     if (i?.reel?.state === 'error') return reelErrorBox(i.reel.error ?? 'Lỗi không xác định khi dựng video.');
     if (i?.built) {
       return html`<span>Đã có (bản v${r.current_revision})</span>
@@ -89,8 +88,8 @@ export function videoView(v: VideoView): string {
 
   return page(
     { ...v.ctx, title: 'Video 9:16', nav: 'video' },
-    html`<div class="page"${anyPending ? ' data-reel-refresh' : ''}>
-      <div class="page-head"><div><h1>Video 9:16</h1><div class="sub">Video dọc 1080×1920, 15 giây, dựng từ nội dung bài bằng Remotion. Dựng chạy nền, bấm "Làm mới" để xem kết quả.</div></div>
+    html`<div class="page">
+      <div class="page-head"><div><h1>Video 9:16</h1><div class="sub">Video dọc 1080×1920 (có lời đọc và phụ đề thì dài theo lời đọc, không thì 15 giây), dựng từ nội dung bài bằng Remotion. Dựng chạy nền; tiến độ tự cập nhật.</div></div>
         <div class="row-gap"><span class="muted">${v.page.total} bài</span><a class="btn" href="${link(v.filter.state, v.filter.market)}">Làm mới</a></div></div>
       ${flashBox(v.flash)}
       ${v.reelOn ? empty : html`<div class="notice err" role="status">Chưa cấu hình dịch vụ Remotion (REMOTION_RENDER_URL), không dựng được video.</div>`}

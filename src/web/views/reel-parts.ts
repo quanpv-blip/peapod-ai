@@ -4,8 +4,8 @@ import { reelEtaText, reelPct, reelStageText, type ReelStatus } from '../../doma
 import { empty, html, type Safe } from '../html.ts';
 
 /**
- * Thanh tiến độ đang dựng. `poll` bật tự cập nhật trên trang bài (xem /assets/reel.js).
- * `compact` dùng trong bảng, không tự cập nhật từng dòng (trang Video tự tải lại theo nhịp).
+ * Thanh tiến độ đang dựng. `poll` bật tự cập nhật tại chỗ (xem /assets/reel.js): hỏi tiến độ ngầm, chỉ tải lại trang
+ * MỘT lần khi dựng xong. `compact` dùng trong bảng trang Video (vẫn tự cập nhật nếu kèm poll).
  */
 export function reelProgress(contentId: number, st: ReelStatus, csrf: string, opts: { compact?: boolean; poll?: boolean } = {}): Safe {
   const pct = reelPct(st);
@@ -19,19 +19,25 @@ export function reelProgress(contentId: number, st: ReelStatus, csrf: string, op
       <span class="small muted" data-reel-msg></span>
     </div>`;
   if (opts.poll) {
-    return html`<div class="reel-progress" data-reel-poll="/contents/${contentId}/reel/status" aria-live="polite">${inner}</div>`;
+    return html`<div class="reel-progress${opts.compact ? ' compact' : ''}" data-reel-poll="/contents/${contentId}/reel/status" aria-live="polite">${inner}</div>`;
   }
   return html`<div class="reel-progress${opts.compact ? ' compact' : ''}" aria-live="polite">${inner}</div>`;
 }
 
 /** Nút dựng. Gắn data-reel-form để giao diện khóa nút ngay khi bấm (chống bấm nhiều lần). */
-export function buildForm(contentId: number, csrf: string, label: string, back?: 'video'): Safe {
+export function buildForm(contentId: number, csrf: string, label: string, back?: 'video', pickTemplate = false): Safe {
   return html`<form method="post" action="/contents/${contentId}/reel" data-reel-form>
     <input type="hidden" name="_csrf" value="${csrf}">${back ? html`<input type="hidden" name="back" value="video">` : empty}
+    ${pickTemplate ? html`<label class="small">Mẫu video <select name="template" aria-label="Mẫu video"><option value="">Tự chọn theo nội dung</option><option value="list">Danh sách ý</option><option value="focus">Mỗi ý một cảnh</option><option value="alert">Cảnh báo (tông đỏ)</option></select></label>` : empty}
     <button class="btn primary" type="submit">${label}</button>
   </form>`;
 }
 
 export function reelErrorBox(msg: string): Safe {
   return html`<div class="notice err" role="alert">Dựng video lỗi: ${msg}</div>`;
+}
+
+/** Ghi chú không phải lỗi, ví dụ video được dựng nhưng không có tiếng. */
+export function reelNoteBox(msg: string): Safe {
+  return html`<div class="notice warn" role="status">${msg}</div>`;
 }

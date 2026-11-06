@@ -9,6 +9,7 @@ import { NEWS_EXAMPLE, NEWS_RULES, NEWS_VOICE, newsUserPrompt, TOPIC_RULES, topi
 import { campaignSourceAllowed, type AppSettings } from '../domain/appSettings.ts';
 import { dedupeByUrl, parseFeed, type FeedItem } from '../domain/rss.ts';
 import { sanitize } from '../domain/sanitizer.ts';
+import { findDuplicate, type RecentPost } from '../domain/strategy.ts';
 import { polishPackage } from '../domain/polish.ts';
 import type { GeminiClient } from '../providers/gemini.ts';
 import { renderCard, cardInputFrom, CARD_H, CARD_W } from '../media/card.ts';
@@ -115,6 +116,11 @@ async function generateFromItem(
     if (pkg.market !== market) return { title, outcome: 'skipped', detail: 'sai thị trường' };
     if (unknownSources(pkg, [item.url]).length) return { title, outcome: 'skipped', detail: 'nguồn không nằm trong nguồn đã cung cấp' };
     if (!languageMatchesMarket(pkg.post.body, market)) return { title, outcome: 'skipped', detail: 'sai ngôn ngữ' };
+    // Bản tin tự động không đăng lại cùng một câu chuyện trong 30 ngày (chủ đề do người duyệt chọn thì không chặn).
+    if (purpose === 'NEWS') {
+      const dup = findDuplicate(pkg, await recentPosts(deps.db, market, deps.now?.() ?? new Date()));
+      if (dup) return { title, outcome: 'skipped', detail: `trùng ý với bài #${dup.id} (${Math.round(dup.score * 100)}%)` };
+    }
 
     const id = await createGenerated(deps.db, pkg, gen.model ?? model);
     if (pkg.media.engine === 'REMOTION_CARD') {
@@ -271,4 +277,15 @@ export async function generateTopic(deps: GenerateDeps, req: TopicRequest): Prom
     })
     .join('\n');
   return generateFromBrief(deps, s, req.market, items, `${TOPIC_RULES}\n\n${NEWS_VOICE[req.market]}\n\n${NEWS_EXAMPLE[req.market]}`, topicUserPrompt(req.market, req.topic.trim(), brief), req.model, 'NEWS', title);
+}
+
+/** Bài của thị trường trong `days` ngày qua (trừ bài đã bị từ chối/hủy/lỗi), để phát hiện bài trùng ý. */
+export async function recentPosts(db: pg.Pool, market: Market, now: Date, days = 30): Promise<RecentPost[]> {
+  const r = await db.query<{ id: string; headline: string | null; summary: string | null }>(
+    `SELECT i.id, r.package->'post'->>'headline' AS headline, r.package->>'topic_summary' AS summary
+       FROM content_item i JOIN content_revision r ON r.content_id = i.id AND r.revision = i.current_revision
+      WHERE i.market = $1 AND i.created_at >= $2 AND i.state NOT IN ('REJECTED','CANCELLED','FAILED_GENERATE','FAILED_MEDIA')`,
+    [market, new Date(now.getTime() - days * 86_400_000)],
+  );
+  return r.rows.map((x) => ({ id: Number(x.id), headline: x.headline ?? '', summary: x.summary ?? '' }));
 }

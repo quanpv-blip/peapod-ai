@@ -144,6 +144,22 @@ d('viết lại bằng AI (PostgreSQL thật)', () => {
     expect((await db.query('SELECT count(*)::int AS n FROM ai_usage')).rows[0].n).toBeGreaterThanOrEqual(1);
   });
 
+  it('sửa theo góp ý: góp ý nằm trong prompt, nguồn vẫn giữ nguyên, góp ý quá ngắn bị từ chối', async () => {
+    const id = await createGenerated(db, base({ headline: 'Tiêu đề trước góp ý' }), 't');
+    const g = gem({ headline: 'Tiêu đề sau góp ý, nêu rõ ai bị ảnh hưởng' }, { sources: [{ title: 'Giả', url: 'https://evil.test/y' }] });
+    const rev = await rewritePost({ db, gemini: g, schema, model: 'm' }, vn, id, { feedback: 'Rút gọn phần mở đầu và nêu rõ ai bị ảnh hưởng' });
+    expect(rev).toBe(2);
+    const sent = (g.generateJson.mock.calls[0]![0] as { user: string }).user;
+    expect(sent).toContain('GÓP Ý: Rút gọn phần mở đầu và nêu rõ ai bị ảnh hưởng');
+    expect(sent).toContain('KHÔNG thêm');
+    expect((await getContent(db, vn, id)).package.sources[0]!.url).toBe('https://vnexpress.net/a');
+
+    const id2 = await createGenerated(db, base({ headline: 'Bài khác' }), 't');
+    const g2 = gem({ headline: 'x' });
+    await expect(rewritePost({ db, gemini: g2, schema, model: 'm' }, vn, id2, { feedback: 'ok' })).rejects.toThrow('Góp ý cần từ');
+    expect(g2.generateJson).not.toHaveBeenCalled();
+  });
+
   it('AI viết sai ngôn ngữ hoặc không đổi gì thì từ chối và không tạo revision', async () => {
     const id = await createGenerated(db, base(), 't');
     await expect(rewritePost({ db, gemini: gem({ body: 'This is an English body that is entirely in English words.' }), schema, model: 'm' }, vn, id, 'concise')).rejects.toThrow('ngôn ngữ');

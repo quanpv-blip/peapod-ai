@@ -27,7 +27,7 @@ describe('trang Video 9:16', () => {
     expect(out).toContain('Dựng lại');
   });
 
-  it('đang dựng: không có nút dựng, có thanh tiến độ, nút hủy và tự tải lại trang', () => {
+  it('đang dựng: không có nút dựng, có thanh tiến độ, nút hủy; tự cập nhật tại chỗ, KHÔNG tải lại cả trang theo nhịp', () => {
     const reel = { state: 'pending' as const, at: new Date().toISOString(), stage: 'rendering' as const, progress: 0.45, frames: 200, totalFrames: 450, etaSeconds: 9 };
     const info = new Map<string, VideoRowInfo>([['7', { headline: 'Tin A', built: false, builtRevision: null, reel }]]);
     const out = videoView({ ...base, info, reelOn: true, canBuild: () => true });
@@ -37,7 +37,8 @@ describe('trang Video 9:16', () => {
     expect(out).toContain('Đang dựng khung hình 200/450');
     expect(out).toContain('còn khoảng 9 giây');
     expect(out).toContain('action="/contents/7/reel/cancel"');
-    expect(out).toContain('data-reel-refresh');
+    expect(out).toContain('data-reel-poll="/contents/7/reel/status"');
+    expect(out).not.toContain('data-reel-refresh');
   });
 
   it('lỗi: hiện lý do và nút dựng lại; không tự tải lại trang', () => {

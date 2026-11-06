@@ -1,6 +1,6 @@
 // Script nhỏ cho module video Reels, phục vụ tại /assets/reel.js (CSP chỉ cho script từ chính máy chủ).
-// Làm ba việc: (1) cập nhật thanh tiến độ trên trang bài và tải lại khi xong; (2) trang Video tự tải lại khi có bài đang dựng;
-// (3) khóa nút ngay khi bấm để không gửi nhiều lần.
+// Làm hai việc: (1) cập nhật thanh tiến độ tại chỗ (trang bài và từng dòng trang Video), chỉ tải lại trang MỘT lần khi xong;
+// (2) khóa nút ngay khi bấm để không gửi nhiều lần. (data-reel-refresh: tải lại theo nhịp, không còn trang nào dùng.)
 export const REEL_JS = `(function () {
   'use strict';
   var POLL_MS = 1500;

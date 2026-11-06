@@ -15,7 +15,7 @@ const field = (id: string, label: string, input: Safe, hint?: string): Safe => h
 </div>`;
 
 const panel = (title: string, sub: string, body: Safe): Safe => html`<section class="panel">
-  <div class="panel-h"><div><div>${title}</div><div class="small muted" style="font-weight:400">${sub}</div></div></div>
+  <div class="panel-h"><div><div>${title}</div><div class="small muted u-fw4">${sub}</div></div></div>
   <div class="panel-b form-grid">${body}</div>
 </section>`;
 
